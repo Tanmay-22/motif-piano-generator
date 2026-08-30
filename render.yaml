@@ -3,16 +3,25 @@ services:
     name: motif-piano-generator
     runtime: docker
     plan: free
-    autoDeploy: true
+    autoDeployTrigger: checksPass
     healthCheckPath: /health
+    maxShutdownDelaySeconds: 45
     envVars:
       - key: MODEL_PATH
-        value: /app/artifacts/conditioned-best.pt
+        value: /app/artifacts/conditioned-v2-best.pt
       - key: MODEL_URL
         sync: false
       - key: MODEL_SHA256
         sync: false
       - key: GITHUB_REPOSITORY_URL
-        sync: false
+        value: https://github.com/Tanmay-22/motif-piano-generator
       - key: PUBLIC_BASE_URL
-        sync: false
+        value: https://motif-piano-generator.onrender.com
+      - key: GENERATION_QUEUE_TIMEOUT_SECONDS
+        value: "5"
+      - key: TORCH_NUM_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"

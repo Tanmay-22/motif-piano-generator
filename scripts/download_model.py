@@ -28,7 +28,11 @@ def download_checkpoint(url: str, destination: Path, expected_sha256: str | None
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download the pinned public model checkpoint.")
     parser.add_argument("--url", default=os.getenv("MODEL_URL"))
-    parser.add_argument("--destination", type=Path, default=Path(os.getenv("MODEL_PATH", "artifacts/conditioned-best.pt")))
+    parser.add_argument(
+        "--destination",
+        type=Path,
+        default=Path(os.getenv("MODEL_PATH", "artifacts/v2/conditioned-v2-best.pt")),
+    )
     parser.add_argument("--sha256", default=os.getenv("MODEL_SHA256"))
     args = parser.parse_args()
     if not args.url:

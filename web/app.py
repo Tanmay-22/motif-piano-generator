@@ -6,6 +6,9 @@ import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TypeAlias
+
+import torch
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
@@ -13,17 +16,19 @@ from fastapi.staticfiles import StaticFiles
 
 from motifgen.generation import MotifGenerator
 from motifgen.tokenizer import MidiTokenizer, RecordedNote
+from motifgen.v2 import CompleteNoteTokenizer, MusicCategory, V2MotifGenerator
 from scripts.download_model import download_checkpoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "web" / "static"
-DEFAULT_MODEL_PATH = ROOT / "artifacts" / "conditioned-best.pt"
+DEFAULT_MODEL_PATH = ROOT / "artifacts" / "v2" / "conditioned-v2-best.pt"
 MAX_UPLOAD_BYTES = 1_000_000
-GENERATION_QUEUE_TIMEOUT_SECONDS = 120.0
+GENERATION_QUEUE_TIMEOUT_SECONDS = float(os.getenv("GENERATION_QUEUE_TIMEOUT_SECONDS", "5"))
+GeneratorService: TypeAlias = MotifGenerator | V2MotifGenerator
 
 
-def load_generator() -> tuple[MotifGenerator | None, str | None]:
+def load_generator() -> tuple[GeneratorService | None, str | None]:
     model_path = Path(os.getenv("MODEL_PATH", str(DEFAULT_MODEL_PATH)))
     model_url = os.getenv("MODEL_URL")
     model_sha256 = os.getenv("MODEL_SHA256")
@@ -32,6 +37,9 @@ def load_generator() -> tuple[MotifGenerator | None, str | None]:
             download_checkpoint(model_url, model_path, model_sha256)
         if not model_path.exists():
             return None, f"Checkpoint not found at {model_path}"
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+        if checkpoint.get("format_version") == 2:
+            return V2MotifGenerator.from_checkpoint(model_path), None
         return MotifGenerator.from_checkpoint(model_path), None
     except Exception as exc:
         return None, f"Checkpoint could not be loaded: {exc}"
@@ -39,6 +47,7 @@ def load_generator() -> tuple[MotifGenerator | None, str | None]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    torch.set_num_threads(max(1, int(os.getenv("TORCH_NUM_THREADS", "1"))))
     app.state.generator, app.state.model_error = load_generator()
     app.state.generation_lock = asyncio.Lock()
     yield
@@ -47,7 +56,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Motif Piano Continuation API",
     description="Non-commercial motif-conditioned symbolic piano generation.",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -63,11 +72,15 @@ async def index() -> HTMLResponse:
 @app.get("/health")
 async def health(request: Request) -> dict[str, object]:
     ready = request.app.state.generator is not None
+    generator = request.app.state.generator
     return {
         "status": "ok" if ready else "degraded",
         "model_ready": ready,
         "model_error": None if ready else request.app.state.model_error,
         "version": app.version,
+        "model_version": (
+            "v2" if isinstance(generator, V2MotifGenerator) else "v1" if generator else None
+        ),
         "repository_url": os.getenv("GITHUB_REPOSITORY_URL"),
     }
 
@@ -92,6 +105,11 @@ async def motif_from_request(
     if motif_json:
         return tokenizer.notes_to_tokens(parse_recorded_notes(motif_json))
 
+    payload = await read_midi_upload(midi_file)
+    return tokenizer.midi_bytes_to_tokens(payload)
+
+
+async def read_midi_upload(midi_file: UploadFile | None) -> bytes:
     assert midi_file is not None
     extension = Path(midi_file.filename or "").suffix.lower()
     if extension not in {".mid", ".midi"}:
@@ -102,7 +120,19 @@ async def motif_from_request(
         raise ValueError("MIDI uploads may be at most 1 MB.")
     if len(payload) < 14:
         raise ValueError("The uploaded MIDI file is empty or incomplete.")
-    return tokenizer.midi_bytes_to_tokens(payload)
+    return payload
+
+
+async def motif_notes_from_request(
+    tokenizer: CompleteNoteTokenizer,
+    motif_json: str | None,
+    midi_file: UploadFile | None,
+) -> list[RecordedNote]:
+    if bool(motif_json) == bool(midi_file):
+        raise ValueError("Provide exactly one motif source: recorded notes or a MIDI file.")
+    if motif_json:
+        return parse_recorded_notes(motif_json)
+    return tokenizer.midi_bytes_to_notes(await read_midi_upload(midi_file))
 
 
 @app.post("/api/generate")
@@ -112,13 +142,21 @@ async def generate(
     midi_file: UploadFile | None = File(default=None),
     duration_seconds: int = Form(default=10),
     temperature: float = Form(default=1.0),
+    category: str = Form(default="auto"),
 ) -> dict[str, object]:
-    generator: MotifGenerator | None = request.app.state.generator
+    generator: GeneratorService | None = request.app.state.generator
     if generator is None:
         raise HTTPException(status_code=503, detail="The trained model is not configured on this service yet.")
     try:
-        motif_tokens = await motif_from_request(generator.tokenizer, motif_json, midi_file)
-        generator.tokenizer.prepare_motif(motif_tokens, generator.data_config.motif_max_tokens)
+        requested_category = MusicCategory.from_value(category)
+        if isinstance(generator, V2MotifGenerator):
+            motif_notes = await motif_notes_from_request(generator.tokenizer, motif_json, midi_file)
+            maximum_notes = generator.model.config.max_motif_events - 2
+            if len(motif_notes) > maximum_notes:
+                raise ValueError(f"The v2 model accepts at most {maximum_notes} motif notes.")
+        else:
+            motif_tokens = await motif_from_request(generator.tokenizer, motif_json, midi_file)
+            generator.tokenizer.prepare_motif(motif_tokens, generator.data_config.motif_max_tokens)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -130,11 +168,33 @@ async def generate(
 
     try:
         try:
+            if isinstance(generator, V2MotifGenerator):
+                result = await asyncio.to_thread(
+                    generator.generate,
+                    motif_notes,
+                    duration_seconds,
+                    temperature,
+                    requested_category,
+                )
+                midi_bytes = generator.tokenizer.notes_to_midi_bytes(result.all_notes)
+                notes = [note.to_dict() for note in result.all_notes]
+                total_duration = max((float(note["end"]) for note in notes), default=0.0)
+                return {
+                    "midi_base64": base64.b64encode(midi_bytes).decode("ascii"),
+                    "notes": notes,
+                    "duration_seconds": total_duration,
+                    "continuation_duration_seconds": result.continuation_duration_seconds,
+                    "motif_end_seconds": result.motif_end_seconds,
+                    "reached_target_duration": result.reached_target_duration,
+                    "timed_out": result.timed_out,
+                    "model_version": "v2",
+                    "category": result.category.value,
+                    "category_applied": True,
+                    "inferred_texture": result.motif_features.texture.value,
+                }
+
             result = await asyncio.to_thread(
-                generator.generate,
-                motif_tokens,
-                duration_seconds,
-                temperature,
+                generator.generate, motif_tokens, duration_seconds, temperature
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -149,6 +209,11 @@ async def generate(
             "continuation_duration_seconds": result.duration_seconds,
             "motif_end_seconds": motif_end,
             "reached_target_duration": result.reached_target_duration,
+            "timed_out": False,
+            "model_version": "v1",
+            "category": requested_category.value,
+            "category_applied": False,
+            "inferred_texture": None,
         }
     finally:
         lock.release()

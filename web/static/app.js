@@ -11,9 +11,15 @@
     voices: new Map(),
     duration: 10,
     temperature: 1,
+    category: "auto",
+    modelVersion: null,
+    modelReady: null,
+    generating: false,
+    generationTimer: null,
     audioContext: null,
     timer: null,
     resultNotes: [],
+    resultMotifEnd: 0,
     resultMidiUrl: null,
     playbackTimers: [],
   };
@@ -233,6 +239,92 @@
 
   function hideNotice() { $("#notice").classList.add("hidden"); }
 
+  const categoryLabels = {
+    auto: "Motif-led · Auto",
+    baroque_classical: "Baroque / Classical",
+    romantic: "Romantic",
+    impressionist_modern: "Impressionist / Modern",
+  };
+
+  const textureLabels = {
+    monophonic: "Single-note motif",
+    light_polyphonic: "Lightly polyphonic motif",
+    full_polyphonic: "Full two-hand texture",
+  };
+
+  function syncGenerateAvailability() {
+    const button = $("#generate-button");
+    button.disabled = state.generating || state.modelReady === false;
+    if (!state.generating) {
+      button.querySelector("span:first-child").textContent = state.modelReady === false ? "Model unavailable" : "Generate continuation";
+    }
+  }
+
+  function configureCategoryControl() {
+    const select = $("#category");
+    const help = $("#category-help");
+    const supportsCategories = state.modelReady && state.modelVersion === "v2";
+    select.disabled = !supportsCategories;
+    if (supportsCategories) {
+      help.textContent = "Auto follows the motif; a period choice gently guides the continuation.";
+      return;
+    }
+    select.value = "auto";
+    state.category = "auto";
+    help.textContent = state.modelVersion === "v1"
+      ? "The deployed v1 checkpoint follows the motif but does not support style categories yet."
+      : "Style choices become available when the category-aware v2 checkpoint is loaded.";
+  }
+
+  function generationPhase(elapsed) {
+    if (elapsed < 2) return "Reading your motif…";
+    if (elapsed < 6) return "Listening for rhythm, timing and texture…";
+    if (elapsed < 18) return "Composing the continuation note by note…";
+    if (elapsed < 32) return "Shaping dynamics and closing active notes…";
+    return "Finishing the best continuation within the CPU limit…";
+  }
+
+  function startGenerationProgress() {
+    const startedAt = performance.now();
+    const progress = $("#generation-progress");
+    progress.classList.remove("hidden");
+    const update = () => {
+      const elapsed = Math.floor((performance.now() - startedAt) / 1000);
+      $("#generation-phase").textContent = generationPhase(elapsed);
+      $("#generation-detail").textContent = `${elapsed} second${elapsed === 1 ? "" : "s"} elapsed · CPU generation can take a little while`;
+      $("#generate-button span:first-child").textContent = `Composing · ${elapsed}s`;
+    };
+    update();
+    state.generationTimer = window.setInterval(update, 250);
+  }
+
+  function stopGenerationProgress() {
+    window.clearInterval(state.generationTimer);
+    state.generationTimer = null;
+    $("#generation-progress").classList.add("hidden");
+  }
+
+  function updateResultContext(payload) {
+    $("#result-model").textContent = `Model ${payload.model_version || "unknown"}`;
+    $("#result-category").textContent = payload.category_applied
+      ? (categoryLabels[payload.category] || payload.category)
+      : "Motif-led · v1";
+    const texture = $("#result-texture");
+    if (payload.inferred_texture) {
+      texture.textContent = textureLabels[payload.inferred_texture] || payload.inferred_texture.replaceAll("_", " ");
+      texture.classList.remove("hidden");
+    } else {
+      texture.classList.add("hidden");
+    }
+    const resultMessage = $("#result-message");
+    if (payload.timed_out || payload.reached_target_duration === false) {
+      resultMessage.textContent = "The CPU time limit was reached, so this is a playable partial continuation. Try 5 seconds for a more reliable complete result on the free service.";
+      resultMessage.classList.remove("hidden");
+    } else {
+      resultMessage.classList.add("hidden");
+    }
+  }
+
   async function generate() {
     hideNotice();
     const file = $("#midi-file").files[0];
@@ -241,16 +333,20 @@
     if (state.source === "upload" && !file) return showNotice("Choose a MIDI file before generating.");
 
     const button = $("#generate-button");
-    button.disabled = true;
-    button.querySelector("span:first-child").textContent = "Composing…";
+    state.generating = true;
+    syncGenerateAvailability();
+    startGenerationProgress();
     const form = new FormData();
     form.append("duration_seconds", String(state.duration));
     form.append("temperature", String(state.temperature));
+    form.append("category", state.category);
     if (state.source === "record") form.append("motif_json", JSON.stringify(state.notes));
     else form.append("midi_file", file);
 
+    const controller = new AbortController();
+    const clientTimeout = window.setTimeout(() => controller.abort(), 90000);
     try {
-      const response = await fetch("/api/generate", { method: "POST", body: form });
+      const response = await fetch("/api/generate", { method: "POST", body: form, signal: controller.signal });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "The model could not generate this time.");
       state.resultNotes = payload.notes;
@@ -259,15 +355,23 @@
       const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
       state.resultMidiUrl = URL.createObjectURL(new Blob([bytes], { type: "audio/midi" }));
       $("#download-button").href = state.resultMidiUrl;
-      $("#result-duration").textContent = `${payload.duration_seconds.toFixed(1)} seconds`;
+      $("#result-duration").textContent = `${Number(payload.duration_seconds).toFixed(1)} seconds`;
       $("#result-card").classList.remove("hidden");
+      state.resultMotifEnd = Number(payload.motif_end_seconds) || 0;
+      updateResultContext(payload);
       drawPianoRoll(payload.notes, payload.motif_end_seconds);
       $("#result-card").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (error) {
-      showNotice(error.message.includes("fetch") ? "The free service may still be waking up. Wait a moment and try again." : error.message);
+      if (error.name === "AbortError") {
+        showNotice("Generation took longer than 90 seconds and the browser stopped waiting. The free service may be waking up; try a 5-second continuation once it is ready.");
+      } else {
+        showNotice(error.message.includes("fetch") ? "The free service may still be waking up. Wait a moment and try again." : error.message);
+      }
     } finally {
-      button.disabled = false;
-      button.querySelector("span:first-child").textContent = "Generate continuation";
+      window.clearTimeout(clientTimeout);
+      stopGenerationProgress();
+      state.generating = false;
+      syncGenerateAvailability();
     }
   }
 
@@ -318,14 +422,24 @@
 
   async function checkHealth() {
     try {
-      const response = await fetch("/health");
+      const response = await fetch("/health", { cache: "no-store" });
+      if (!response.ok) throw new Error("Health check failed");
       const health = await response.json();
+      state.modelReady = Boolean(health.model_ready);
+      state.modelVersion = health.model_version || null;
       $("#model-dot").className = `status-dot ${health.model_ready ? "ready" : "error"}`;
-      $("#model-status").textContent = health.model_ready ? "Model ready" : "Model unavailable";
+      $("#model-status").textContent = health.model_ready ? `Model ${state.modelVersion || ""} ready`.replace("  ", " ") : "Model unavailable";
       if (health.repository_url) $("#source-link").href = health.repository_url;
+      configureCategoryControl();
+      syncGenerateAvailability();
     } catch {
+      state.modelReady = null;
+      state.modelVersion = null;
       $("#model-dot").className = "status-dot error";
       $("#model-status").textContent = "Service waking";
+      configureCategoryControl();
+      syncGenerateAvailability();
+      window.setTimeout(checkHealth, 8000);
     }
   }
 
@@ -340,6 +454,9 @@
   $("#temperature").addEventListener("input", (event) => {
     state.temperature = Number(event.target.value);
     $("#temperature-value").textContent = `${temperatureLabel(state.temperature)} · ${state.temperature.toFixed(1)}`;
+  });
+  $("#category").addEventListener("change", (event) => {
+    state.category = event.target.value;
   });
   $("#duration-control").addEventListener("click", (event) => {
     const button = event.target.closest("button[data-duration]");
@@ -382,7 +499,7 @@
     [...state.voices.keys()].forEach(noteOff);
   });
   window.addEventListener("resize", () => {
-    if (state.resultNotes.length) drawPianoRoll(state.resultNotes);
+    if (state.resultNotes.length) drawPianoRoll(state.resultNotes, state.resultMotifEnd);
   });
   checkHealth();
 })();

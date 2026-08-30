@@ -4,10 +4,12 @@ import json
 from io import BytesIO
 
 import pytest
+import torch
 from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
 from web.app import app, motif_from_request, parse_recorded_notes
+from motifgen.v2 import CompleteNoteTokenizer, MotifContinuationTransformer, V2ModelConfig
 
 
 def test_health_reports_missing_checkpoint(monkeypatch, tmp_path):
@@ -25,6 +27,10 @@ def test_home_page_contains_primary_studio():
         assert response.status_code == 200
         assert "Generate continuation" in response.text
         assert "Upload MIDI" in response.text
+        assert 'id="category"' in response.text
+        assert "Baroque / Classical" in response.text
+        assert 'id="generation-progress"' in response.text
+        assert 'id="result-texture"' in response.text
 
 
 def test_recorded_motif_validation():
@@ -53,3 +59,69 @@ async def test_upload_validation_rejects_non_midi(tokenizer):
     upload = UploadFile(filename="motif.txt", file=BytesIO(b"not-midi"))
     with pytest.raises(ValueError, match=".mid or .midi"):
         await motif_from_request(tokenizer, None, upload)
+
+
+def test_v2_api_applies_category_and_reports_inferred_texture(monkeypatch, tmp_path):
+    tokenizer = CompleteNoteTokenizer()
+    config = V2ModelConfig.from_tokenizer(
+        tokenizer,
+        model_dim=32,
+        heads=4,
+        encoder_layers=1,
+        decoder_layers=1,
+        feedforward_dim=64,
+        dropout=0,
+        max_motif_events=40,
+        max_continuation_events=40,
+    )
+    model = MotifContinuationTransformer(config)
+    checkpoint = tmp_path / "v2.pt"
+    torch.save(
+        {
+            "format_version": 2,
+            "model_kind": "motif_encoder_decoder_v2",
+            "model_state": model.state_dict(),
+            "model_config": config.to_dict(),
+            "tokenizer_config": {"sample_rate": 100, "max_time_seconds": 30},
+        },
+        checkpoint,
+    )
+    monkeypatch.setenv("MODEL_PATH", str(checkpoint))
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    motif = json.dumps(
+        [
+            {"pitch": 60, "start": 0, "end": 0.4, "velocity": 90},
+            {"pitch": 62, "start": 0.5, "end": 0.9, "velocity": 94},
+            {"pitch": 64, "start": 1.0, "end": 1.4, "velocity": 98},
+        ]
+    )
+    with TestClient(app) as client:
+        health = client.get("/health").json()
+        assert health["model_version"] == "v2"
+        response = client.post(
+            "/api/generate",
+            data={
+                "motif_json": motif,
+                "duration_seconds": "5",
+                "temperature": "0.8",
+                "category": "romantic",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["model_version"] == "v2"
+        assert payload["category"] == "romantic"
+        assert payload["category_applied"] is True
+        assert payload["inferred_texture"] == "monophonic"
+        assert payload["midi_base64"]
+
+        invalid = client.post(
+            "/api/generate",
+            data={
+                "motif_json": motif,
+                "duration_seconds": "5",
+                "temperature": "0.8",
+                "category": "jazz",
+            },
+        )
+        assert invalid.status_code == 422

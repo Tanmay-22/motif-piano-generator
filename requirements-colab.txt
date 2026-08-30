@@ -1,0 +1,5 @@
+# Keep Colab's preinstalled CUDA-enabled torch. The notebook installs this file
+# first, then installs the project editable with --no-deps.
+numpy==1.26.4
+pretty-midi==0.2.11.post0
+tqdm==4.67.1

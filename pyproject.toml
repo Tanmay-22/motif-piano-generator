@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "motif-piano-generator"
-version = "1.0.0"
+version = "2.0.0"
 description = "A non-commercial motif-conditioned symbolic piano generation demo."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -15,7 +15,7 @@ dependencies = [
   "numpy==1.26.4",
   "pretty-midi==0.2.11.post0",
   "python-multipart==0.0.20",
-  "torch==2.5.1",
+  "torch>=2.5,<3",
   "tqdm==4.67.1",
   "uvicorn[standard]==0.34.3",
 ]
