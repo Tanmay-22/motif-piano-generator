@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.pytest_tmp/
+.coverage
+.venv/
+venv/
+
+# Training data and artifacts
+data/
+artifacts/
+*.pt
+*.pth
+*.ckpt
+maestro_dataset/
+maestro-v3.0.0-midi.zip
+
+# Generated media
+*.mid
+*.midi
+*.wav
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local configuration
+.env
+.env.*
+!.env.example

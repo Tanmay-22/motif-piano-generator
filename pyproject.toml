@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motif-piano-generator"
+version = "1.0.0"
+description = "A non-commercial motif-conditioned symbolic piano generation demo."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Motif project contributors" }]
+dependencies = [
+  "fastapi==0.115.12",
+  "numpy==1.26.4",
+  "pretty-midi==0.2.11.post0",
+  "python-multipart==0.0.20",
+  "torch==2.5.1",
+  "tqdm==4.67.1",
+  "uvicorn[standard]==0.34.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "pytest==8.4.1",
+  "pytest-asyncio==1.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q --basetemp=.pytest_tmp"
+testpaths = ["tests"]
+pythonpath = [".", "src"]

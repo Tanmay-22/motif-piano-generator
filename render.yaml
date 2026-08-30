@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: motif-piano-generator
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: MODEL_PATH
+        value: /app/artifacts/conditioned-best.pt
+      - key: MODEL_URL
+        sync: false
+      - key: MODEL_SHA256
+        sync: false
+      - key: GITHUB_REPOSITORY_URL
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false

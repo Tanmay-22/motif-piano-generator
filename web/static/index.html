@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Play or upload a piano motif and generate a new continuation with a Transformer trained on MAESTRO." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Motif — Piano Continuation Studio" />
+    <meta property="og:description" content="Play an idea. Hear where it goes." />
+    <meta property="og:image" content="__PUBLIC_BASE_URL__/static/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Motif — Piano Continuation Studio" />
+    <meta name="twitter:description" content="Play an idea. Hear where it goes." />
+    <meta name="twitter:image" content="__PUBLIC_BASE_URL__/static/og.png" />
+    <title>Motif — Piano Continuation Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Motif home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>Motif</span>
+      </a>
+      <div class="project-meta">
+        <span class="status-dot" id="model-dot"></span>
+        <span id="model-status">Waking the model…</span>
+        <a id="source-link" href="https://github.com/" target="_blank" rel="noreferrer">Open source <span aria-hidden="true">↗</span></a>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">A motif-conditioned music experiment</p>
+        <h1 id="page-title">Play an idea.<br /><em>Hear where it goes.</em></h1>
+        <p class="lede">Record a small phrase or bring a MIDI file. A piano Transformer will listen, then compose a new continuation in its wake.</p>
+      </section>
+
+      <section class="studio" aria-label="Music generation studio">
+        <div class="studio-head">
+          <div>
+            <span class="step-number">01</span>
+            <h2>Give it a motif</h2>
+          </div>
+          <div class="source-tabs" role="tablist" aria-label="Motif source">
+            <button class="source-tab active" id="record-tab" role="tab" aria-selected="true" aria-controls="record-panel">Play piano</button>
+            <button class="source-tab" id="upload-tab" role="tab" aria-selected="false" aria-controls="upload-panel">Upload MIDI</button>
+          </div>
+        </div>
+
+        <div id="record-panel" role="tabpanel" aria-labelledby="record-tab">
+          <div class="recorder-row">
+            <button class="record-button" id="record-button" type="button">
+              <span class="record-icon"></span>
+              <span id="record-label">Start recording</span>
+            </button>
+            <div class="record-readout">
+              <span id="record-time">00:00.0</span>
+              <span id="note-count">0 notes</span>
+            </div>
+            <button class="text-button" id="clear-button" type="button">Clear</button>
+            <button class="text-button" id="preview-motif-button" type="button" disabled>Preview motif</button>
+          </div>
+
+          <div class="piano-shell">
+            <div class="piano-caption">
+              <span>Use your mouse, touch, or keyboard</span>
+              <span class="key-hint"><kbd>A</kbd> to <kbd>K</kbd></span>
+            </div>
+            <div class="piano" id="piano" aria-label="Two-octave virtual piano"></div>
+          </div>
+        </div>
+
+        <div id="upload-panel" class="hidden" role="tabpanel" aria-labelledby="upload-tab">
+          <label class="upload-zone" id="upload-zone" for="midi-file">
+            <input id="midi-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" />
+            <span class="upload-icon" aria-hidden="true">↑</span>
+            <strong>Drop a MIDI motif here</strong>
+            <span>or choose a file · max 1 MB</span>
+            <span class="file-name" id="file-name"></span>
+          </label>
+        </div>
+
+        <div class="rule"></div>
+
+        <div class="generation-grid">
+          <div class="generation-title">
+            <span class="step-number">02</span>
+            <h2>Shape the continuation</h2>
+          </div>
+
+          <fieldset class="control-group">
+            <legend>Length</legend>
+            <div class="segmented" id="duration-control">
+              <button type="button" data-duration="5">5 sec</button>
+              <button type="button" data-duration="10" class="active">10 sec</button>
+              <button type="button" data-duration="20">20 sec</button>
+            </div>
+          </fieldset>
+
+          <div class="control-group">
+            <div class="range-label">
+              <label for="temperature">Creativity</label>
+              <output id="temperature-value" for="temperature">Balanced · 1.0</output>
+            </div>
+            <input id="temperature" type="range" min="0.6" max="1.4" value="1" step="0.1" />
+            <div class="range-ends"><span>Focused</span><span>Unbound</span></div>
+          </div>
+
+          <button class="generate-button" id="generate-button" type="button">
+            <span>Generate continuation</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="result-card hidden" id="result-card" aria-live="polite">
+        <div class="result-head">
+          <div>
+            <p class="eyebrow">Your continuation</p>
+            <h2>A new phrase, shaped by yours</h2>
+          </div>
+          <span class="result-duration" id="result-duration">10.0 seconds</span>
+        </div>
+        <canvas id="piano-roll" width="1120" height="260" aria-label="Generated music piano roll"></canvas>
+        <div class="transport">
+          <button class="play-button" id="play-result-button" type="button"><span aria-hidden="true">▶</span> Play result</button>
+          <div class="transport-line"><span id="play-progress"></span></div>
+          <a class="download-button" id="download-button" download="motif-continuation.mid">Download MIDI <span aria-hidden="true">↓</span></a>
+        </div>
+      </section>
+
+      <div class="notice hidden" id="notice" role="status"></div>
+
+      <section class="about-strip">
+        <p>Built as a non-commercial research demo using a causal Transformer trained on the MAESTRO v3 piano dataset.</p>
+        <div><span>313 event tokens</span><span>10 ms timing</span><span>CPU inference</span></div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Motif · Piano continuation studio</span>
+      <span>MAESTRO is licensed CC BY-NC-SA 4.0</span>
+    </footer>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
