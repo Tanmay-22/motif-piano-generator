@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from types import SimpleNamespace
 
 from motifgen.config import DataConfig, GenerationConfig, ModelConfig
 from motifgen.generation import MotifGenerator
@@ -20,6 +21,12 @@ class PredictTimeShiftModel(nn.Module):
         logits[:, :, self.tokenizer.token_to_id["TIME_SHIFT_100"]] = 40.0
         return logits
 
+    def prefill(self, tokens, padding_mask=None):
+        return self.forward(tokens, padding_mask), SimpleNamespace(sequence_length=tokens.size(1))
+
+    def forward_step(self, token, state, is_padding=None):
+        return self.forward(token, is_padding), SimpleNamespace(sequence_length=state.sequence_length + 1)
+
 
 def test_generation_masks_forbidden_tokens_and_reaches_duration(tokenizer):
     model = PredictTimeShiftModel(tokenizer)
@@ -34,4 +41,3 @@ def test_generation_masks_forbidden_tokens_and_reaches_duration(tokenizer):
     assert result.reached_target_duration
     assert result.duration_seconds >= 5
     assert not tokenizer.forbidden_generation_ids.intersection(result.continuation_tokens)
-

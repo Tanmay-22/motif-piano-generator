@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "web" / "static"
 DEFAULT_MODEL_PATH = ROOT / "artifacts" / "conditioned-best.pt"
 MAX_UPLOAD_BYTES = 1_000_000
-GENERATION_QUEUE_TIMEOUT_SECONDS = 3.0
+GENERATION_QUEUE_TIMEOUT_SECONDS = 120.0
 
 
 def load_generator() -> tuple[MotifGenerator | None, str | None]:
@@ -126,7 +126,7 @@ async def generate(
     try:
         await asyncio.wait_for(lock.acquire(), timeout=GENERATION_QUEUE_TIMEOUT_SECONDS)
     except TimeoutError as exc:
-        raise HTTPException(status_code=429, detail="The model is busy. Please try again in a few seconds.") from exc
+        raise HTTPException(status_code=429, detail="Another composition is still running. Please try again shortly.") from exc
 
     try:
         try:

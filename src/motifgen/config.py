@@ -47,4 +47,4 @@ class GenerationConfig:
     max_temperature: float = 1.4
     max_generated_tokens: int = 1400
     top_k: int = 32
-
+    cache_reset_tokens: int = 256

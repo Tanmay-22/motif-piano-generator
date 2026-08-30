@@ -85,12 +85,15 @@ class MotifGenerator:
         else:
             rng.seed()
 
+        token_tensor = torch.tensor([sequence], dtype=torch.long, device=self.device)
+        padding_tensor = torch.tensor([padding], dtype=torch.bool, device=self.device)
+        prompt_logits, incremental_state = self.model.prefill(token_tensor, padding_tensor)
+        next_logits = prompt_logits[0, -1].float()
+
         for _ in range(self.generation_config.max_generated_tokens):
-            window_tokens = sequence[-self.model.config.max_sequence_length :]
-            window_padding = padding[-self.model.config.max_sequence_length :]
-            token_tensor = torch.tensor([window_tokens], dtype=torch.long, device=self.device)
-            padding_tensor = torch.tensor([window_padding], dtype=torch.bool, device=self.device)
-            logits = self.model(token_tensor, padding_tensor)[0, -1].float() / temperature
+            logits = next_logits / temperature
+            if not torch.isfinite(logits).all():
+                logits = torch.nan_to_num(logits, nan=-1e4, posinf=1e4, neginf=-1e4)
             for token_id in self.tokenizer.forbidden_generation_ids:
                 logits[token_id] = -torch.inf
             top_k = min(self.generation_config.top_k, logits.numel())
@@ -106,6 +109,20 @@ class MotifGenerator:
                 elapsed += int(token_name.rsplit("_", 1)[1]) / self.tokenizer.sample_rate
             if elapsed >= target_seconds:
                 break
+
+            next_tensor = torch.tensor([[next_token]], dtype=torch.long, device=self.device)
+            if incremental_state.sequence_length >= self.model.config.max_sequence_length:
+                reset_length = min(
+                    self.generation_config.cache_reset_tokens,
+                    self.model.config.max_sequence_length - 1,
+                )
+                reset_tokens = torch.tensor([sequence[-reset_length:]], dtype=torch.long, device=self.device)
+                reset_padding = torch.tensor([padding[-reset_length:]], dtype=torch.bool, device=self.device)
+                reset_logits, incremental_state = self.model.prefill(reset_tokens, reset_padding)
+                next_logits = reset_logits[0, -1].float()
+            else:
+                step_logits, incremental_state = self.model.forward_step(next_tensor, incremental_state)
+                next_logits = step_logits[0, -1].float()
 
         clean_motif = [token for token in prepared_motif if token != self.tokenizer.pad_id]
         return GenerationResult(
