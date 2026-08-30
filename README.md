@@ -2,7 +2,7 @@
 
 [![Render-ready](https://img.shields.io/badge/Render-ready-46E3B7?logo=render&logoColor=white)](https://render.com/)
 [![CI](https://github.com/Tanmay-22/motif-piano-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/Tanmay-22/motif-piano-generator/actions/workflows/ci.yml)
-[![Python 3.11–3.12](https://img.shields.io/badge/Python-3.11%E2%80%933.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.11–3.13](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/Code-MIT-d8ff62)](LICENSE)
 [![Model: non-commercial](https://img.shields.io/badge/Model-CC%20BY--NC--SA%204.0-9d8cff)](MODEL_LICENSE.md)
 
@@ -58,7 +58,9 @@ legacy v1 checkpoint, but category controls are disabled until v2 is present.
 
 ## Run locally
 
-Use Python 3.11 or 3.12.
+Use Python 3.11, 3.12, or 3.13. The Colab requirements use NumPy 2.1+
+because current Colab runtimes use Python 3.13; the Python 3.11 Render image
+keeps the smaller, established CPU dependency set.
 
 ```bash
 python -m venv .venv

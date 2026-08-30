@@ -1,5 +1,7 @@
 # Keep Colab's preinstalled CUDA-enabled torch. The notebook installs this file
 # first, then installs the project editable with --no-deps.
-numpy==1.26.4
+# NumPy 2.1 is the first release with CPython 3.13 support. Keep Colab's
+# preinstalled CUDA-enabled torch and install only the portable dependencies.
+numpy>=2.1,<3
 pretty-midi==0.2.11.post0
 tqdm==4.67.1
