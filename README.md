@@ -212,7 +212,9 @@ python -m scripts.prepare_v2_release \
 Publish `conditioned-v2-best.pt`, the release ZIP, and the nine example MIDIs as
 assets under the immutable `model-v2.0.0` GitHub Release. The server downloads
 the pinned model during the Docker build and verifies `MODEL_SHA256`; startup
-retains the same download path as a fallback.
+retains the same download path as a fallback. The release bundle also generates
+`render-env-v2.txt`, so the pinned URL, checksum, and CPU settings can be copied
+into Render without retyping them.
 
 ## Deploy on Render
 

@@ -9,8 +9,10 @@ from motifgen.tokenizer import RecordedNote
 from motifgen.v2 import CompleteNoteTokenizer, MotifContinuationTransformer, V2ModelConfig
 from scripts.prepare_v2_release import (
     main as prepare_release,
+    release_asset_url,
     release_notes_markdown,
     release_quality_failures,
+    render_environment_text,
     sha256_file,
 )
 
@@ -46,6 +48,30 @@ def test_release_sha256_is_streamed_and_stable(tmp_path):
     artifact = tmp_path / "artifact.bin"
     artifact.write_bytes(b"motif-v2")
     assert sha256_file(artifact) == "2f5db53ecb3908adc8bee93f2036bfff4094bf81978ec30546e96b646a6f1df7"
+
+
+def test_release_urls_and_render_environment_are_pinned():
+    expected_url = (
+        "https://github.com/Tanmay-22/motif-piano-generator/releases/download/"
+        "model-v2.0.0/conditioned-v2-best.pt"
+    )
+    assert (
+        release_asset_url(
+            "Tanmay-22/motif-piano-generator",
+            "model-v2.0.0",
+            "conditioned-v2-best.pt",
+        )
+        == expected_url
+    )
+    rendered = render_environment_text(
+        "Tanmay-22/motif-piano-generator",
+        "model-v2.0.0",
+        "a" * 64,
+        "https://motif-piano-generator.onrender.com/",
+    )
+    assert f"MODEL_URL={expected_url}" in rendered
+    assert f"MODEL_SHA256={'a' * 64}" in rendered
+    assert "PUBLIC_BASE_URL=https://motif-piano-generator.onrender.com\n" in rendered
 
 
 def test_release_notes_are_filled_from_measured_results():
@@ -122,5 +148,9 @@ def test_release_packager_builds_verified_bundle(monkeypatch, tmp_path):
     assert manifest["checkpoint"]["format_version"] == 2
     assert manifest["example_count"] == 1
     assert (destination / "RELEASE_NOTES.md").exists()
+    assert (destination / "render-env-v2.txt").exists()
+    assert manifest["checkpoint"]["download_url"].endswith(
+        "/model-v2.0.0/conditioned-v2-best.pt"
+    )
     assert (destination / "SHA256SUMS.txt").exists()
     assert destination.with_suffix(".zip").exists()

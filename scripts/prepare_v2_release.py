@@ -24,6 +24,36 @@ REQUIRED_CATEGORIES = (
 )
 
 
+def release_asset_url(repository: str, release_tag: str, filename: str) -> str:
+    repository = repository.strip().strip("/")
+    if repository.count("/") != 1 or any(character.isspace() for character in repository):
+        raise ValueError("Repository must use the OWNER/NAME format.")
+    return f"https://github.com/{repository}/releases/download/{release_tag}/{filename}"
+
+
+def render_environment_text(
+    repository: str,
+    release_tag: str,
+    checkpoint_sha256: str,
+    public_base_url: str,
+) -> str:
+    checkpoint_url = release_asset_url(
+        repository, release_tag, "conditioned-v2-best.pt"
+    )
+    values = {
+        "MODEL_PATH": "/app/artifacts/conditioned-v2-best.pt",
+        "MODEL_URL": checkpoint_url,
+        "MODEL_SHA256": checkpoint_sha256,
+        "GITHUB_REPOSITORY_URL": f"https://github.com/{repository.strip().strip('/')}",
+        "PUBLIC_BASE_URL": public_base_url.rstrip("/"),
+        "GENERATION_QUEUE_TIMEOUT_SECONDS": "5",
+        "TORCH_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+    }
+    return "\n".join(f"{key}={value}" for key, value in values.items()) + "\n"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -89,8 +119,9 @@ increase when the correct motifs are shuffled.
 
 The release ZIP contains the evaluation report, fixed held-out motifs, their
 real and generated continuations, model configuration, source revision,
-license, and SHA-256 checksums. `conditioned-v2-best.pt` is also attached as a
-standalone asset for the Render deployment.
+license, SHA-256 checksums, and a copy-ready `render-env-v2.txt` file.
+`conditioned-v2-best.pt` is also attached as a standalone asset for the Render
+deployment.
 
 ## License
 
@@ -122,6 +153,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--examples-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--release-tag", default="model-v2.0.0")
+    parser.add_argument("--repository", default="Tanmay-22/motif-piano-generator")
+    parser.add_argument(
+        "--public-base-url",
+        default="https://motif-piano-generator.onrender.com",
+    )
     parser.add_argument("--allow-failed-quality-gates", action="store_true")
     return parser.parse_args()
 
@@ -172,6 +208,9 @@ def main() -> None:
         shutil.copy2(midi_path, release_examples / midi_path.name)
 
     checkpoint_sha = sha256_file(checkpoint_destination)
+    checkpoint_url = release_asset_url(
+        args.repository, args.release_tag, checkpoint_destination.name
+    )
     manifest = {
         "release_tag": args.release_tag,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -182,6 +221,7 @@ def main() -> None:
         "commercial_use": False,
         "checkpoint": {
             "filename": checkpoint_destination.name,
+            "download_url": checkpoint_url,
             "sha256": checkpoint_sha,
             "bytes": checkpoint_destination.stat().st_size,
             "format_version": 2,
@@ -213,6 +253,15 @@ def main() -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (args.output_dir / "RELEASE_NOTES.md").write_text(
         release_notes_markdown(args.release_tag, report, checkpoint), encoding="utf-8"
+    )
+    (args.output_dir / "render-env-v2.txt").write_text(
+        render_environment_text(
+            args.repository,
+            args.release_tag,
+            checkpoint_sha,
+            args.public_base_url,
+        ),
+        encoding="utf-8",
     )
 
     checksum_paths = sorted(

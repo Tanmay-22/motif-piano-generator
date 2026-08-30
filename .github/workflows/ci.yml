@@ -27,5 +27,31 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
       - name: Check Python syntax
         run: python -m compileall -q src training scripts web tests
+      - name: Check browser JavaScript syntax
+        run: node --check web/static/app.js
+      - name: Validate the Colab notebook JSON
+        run: python -m json.tool training/train_v2_colab.ipynb > /dev/null
       - name: Run tests
         run: python -m pytest
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Render image without a checkpoint
+        run: docker build --tag motif-piano-generator:ci .
+      - name: Start the image and verify the diagnostic health endpoint
+        run: |
+          docker run --detach --name motif-ci --publish 8000:8000 motif-piano-generator:ci
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs motif-ci
+          exit 1
+      - name: Stop the test container
+        if: always()
+        run: docker rm --force motif-ci || true
