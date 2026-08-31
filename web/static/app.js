@@ -13,6 +13,7 @@
     resultMidiUrl: null, resultPayload: null, playbackTimers: [], playbackSession: 0,
     playbackNotes: [], playbackKind: null, playbackOffset: 0, playbackStartedAt: 0,
     playbackDuration: 0, playbackSpeed: 1, playing: false, playbackFrame: null, rollZoom: 1,
+    heroLocked: false, heroFrame: null, heroScrollFloor: 0, heroFocusAfterLock: false,
   };
 
   const pitchNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
@@ -53,9 +54,9 @@
     ],
     chords: [
       { pitch: 48, start: 0, end: 0.86, velocity: 72 }, { pitch: 60, start: 0, end: 0.86, velocity: 82 }, { pitch: 64, start: 0, end: 0.86, velocity: 78 }, { pitch: 67, start: 0, end: 0.86, velocity: 75 },
-      { pitch: 45, start: 1, end: 1.86, velocity: 70 }, { pitch: 57, start: 1, end: 1.86, velocity: 80 }, { pitch: 60, start: 1, end: 1.86, velocity: 76 }, { pitch: 64, start: 1, end: 1.86, velocity: 73 },
-      { pitch: 41, start: 2, end: 2.86, velocity: 74 }, { pitch: 53, start: 2, end: 2.86, velocity: 84 }, { pitch: 57, start: 2, end: 2.86, velocity: 80 }, { pitch: 60, start: 2, end: 2.86, velocity: 76 },
-      { pitch: 43, start: 3, end: 4.05, velocity: 76 }, { pitch: 55, start: 3, end: 4.05, velocity: 86 }, { pitch: 59, start: 3, end: 4.05, velocity: 82 }, { pitch: 62, start: 3, end: 4.05, velocity: 78 },
+      { pitch: 50, start: 1, end: 1.86, velocity: 70 }, { pitch: 57, start: 1, end: 1.86, velocity: 80 }, { pitch: 62, start: 1, end: 1.86, velocity: 76 }, { pitch: 65, start: 1, end: 1.86, velocity: 73 },
+      { pitch: 53, start: 2, end: 2.86, velocity: 74 }, { pitch: 60, start: 2, end: 2.86, velocity: 84 }, { pitch: 65, start: 2, end: 2.86, velocity: 80 }, { pitch: 69, start: 2, end: 2.86, velocity: 76 },
+      { pitch: 55, start: 3, end: 4.05, velocity: 76 }, { pitch: 59, start: 3, end: 4.05, velocity: 86 }, { pitch: 62, start: 3, end: 4.05, velocity: 82 }, { pitch: 65, start: 3, end: 4.05, velocity: 78 },
     ],
   };
 
@@ -79,6 +80,84 @@
   function formatTime(seconds) {
     const safe = Math.max(0, Number(seconds) || 0);
     return `${Math.floor(safe / 60)}:${Math.floor(safe % 60).toString().padStart(2, "0")}`;
+  }
+
+  function paintHeroProgress(progress) {
+    if (state.heroLocked) return;
+    const clamped = Math.max(0, Math.min(1, progress));
+    const media = $("#hero-splash-media");
+    const shade = $(".hero-splash-shade");
+    const enterButton = $("#enter-studio-button");
+    media.style.filter = `blur(${(clamped * 18).toFixed(1)}px) brightness(${(1 - clamped * 0.58).toFixed(2)}) saturate(${(1 - clamped * 0.34).toFixed(2)})`;
+    media.style.transform = `scale(${(1 + clamped * 0.07).toFixed(3)})`;
+    shade.style.opacity = String(0.35 + clamped * 0.65);
+    enterButton.style.opacity = String(Math.max(0, 1 - clamped * 1.45));
+  }
+
+  function clampHeroScroll() {
+    if (!state.heroLocked) return;
+    const floor = state.heroScrollFloor || $("#site-shell").offsetTop;
+    if (window.scrollY >= floor - 1) return;
+    const root = document.documentElement;
+    root.classList.add("hero-scroll-clamp");
+    window.scrollTo(0, floor);
+    requestAnimationFrame(() => root.classList.remove("hero-scroll-clamp"));
+  }
+
+  function lockHero() {
+    if (state.heroLocked) return;
+    state.heroScrollFloor = $("#site-shell").offsetTop;
+    state.heroLocked = true;
+    document.body.classList.add("hero-locked");
+    document.body.dataset.heroState = "locked";
+    document.body.dataset.heroScrollFloor = String(Math.round(state.heroScrollFloor));
+    const media = $("#hero-splash-media");
+    media.style.filter = "blur(20px) brightness(0.34) saturate(0.64)";
+    media.style.transform = "scale(1.075)";
+    $(".hero-splash-shade").style.opacity = "1";
+    const enterButton = $("#enter-studio-button");
+    enterButton.style.opacity = "0";
+    enterButton.disabled = true;
+    clampHeroScroll();
+    requestAnimationFrame(() => {
+      if (state.heroFocusAfterLock) $("#page-title").focus({ preventScroll: true });
+      state.heroFocusAfterLock = false;
+    });
+  }
+
+  function updateHeroFromScroll() {
+    state.heroFrame = null;
+    if (state.heroLocked) {
+      clampHeroScroll();
+      return;
+    }
+    const studioTop = $("#site-shell").offsetTop;
+    const progress = Math.min(1, window.scrollY / Math.max(1, studioTop));
+    paintHeroProgress(progress);
+    if (window.scrollY >= studioTop - 1) lockHero();
+  }
+
+  function scheduleHeroUpdate() {
+    if (state.heroFrame !== null) return;
+    state.heroFrame = requestAnimationFrame(updateHeroFromScroll);
+  }
+
+  function enterStudio() {
+    state.heroFocusAfterLock = true;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $("#site-shell").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    scheduleHeroUpdate();
+  }
+
+  function initializeHero() {
+    document.body.dataset.heroState = "splash";
+    paintHeroProgress(0);
+    $("#enter-studio-button").addEventListener("click", enterStudio);
+    window.addEventListener("scroll", scheduleHeroUpdate, { passive: true });
+    window.addEventListener("wheel", (event) => {
+      if (state.heroLocked && event.deltaY < 0 && window.scrollY <= state.heroScrollFloor + 1) event.preventDefault();
+    }, { passive: false });
+    scheduleHeroUpdate();
   }
 
   function ensureAudio() {
@@ -422,10 +501,11 @@
     if (state.recording) stopRecording();
     switchSource("record");
     stopPlayback(true);
-    state.notes = notes.map((note) => ({ ...note }));
+    const octaveOffset = (state.keyboardOctave - 4) * 12;
+    state.notes = notes.map((note) => ({ ...note, pitch: note.pitch + octaveOffset }));
     $("#record-label").textContent = "Record again";
     updateRecorder();
-    updateRecordingStatus("Example loaded. Listen, edit, or compose from it.");
+    updateRecordingStatus(`Example loaded for octave ${state.keyboardOctave}. Listen, edit, or compose from it.`);
     analyzeCurrentMotif();
     startPlayback(state.notes, 0, "motif");
   }
@@ -902,6 +982,7 @@
     return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
   }
 
+  initializeHero();
   buildPiano();
   $("#record-button").addEventListener("click", () => {
     if (state.countingIn) cancelCountIn(); else if (state.recording) stopRecording(); else prepareRecording();

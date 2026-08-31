@@ -19,10 +19,22 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <section class="hero-splash" id="hero-splash" aria-label="Motif piano continuation studio introduction">
+      <div class="hero-splash-media" id="hero-splash-media" aria-hidden="true">
+        <img src="/static/og.png" alt="" />
+      </div>
+      <div class="hero-splash-shade" aria-hidden="true"></div>
+      <button class="enter-studio-button" id="enter-studio-button" type="button">
+        <span>Enter the studio</span>
+        <span class="enter-studio-arrow" aria-hidden="true">↓</span>
+      </button>
+    </section>
+
     <div class="ambient ambient-one"></div>
     <div class="ambient ambient-two"></div>
 
-    <header class="topbar">
+    <div class="site-shell" id="site-shell">
+      <header class="topbar">
       <a class="brand" href="/" aria-label="Motif home">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>Motif</span>
@@ -32,20 +44,16 @@
         <span id="model-status">Waking the model…</span>
         <a id="source-link" href="https://github.com/" target="_blank" rel="noreferrer">Open source <span aria-hidden="true">↗</span></a>
       </div>
-    </header>
+      </header>
 
-    <main>
-      <section class="intro" aria-labelledby="page-title">
-        <div class="intro-copy">
-          <p class="eyebrow">A motif-conditioned music experiment</p>
-          <h1 id="page-title">Play an idea.<br /><em>Hear where it goes.</em></h1>
-          <p class="lede">Record a small phrase or bring a MIDI file. A piano Transformer will listen, then compose a new continuation in its wake.</p>
-        </div>
-        <figure class="hero-art" aria-label="Motif notes flowing into a generated piano continuation">
-          <img src="/static/og.png" alt="Purple motif notes transforming into a flowing lime piano phrase" />
-          <figcaption>Motif in violet · continuation in lime</figcaption>
-        </figure>
-      </section>
+      <main>
+        <section class="intro" aria-labelledby="page-title">
+          <div class="intro-copy">
+            <p class="eyebrow">A motif-conditioned music experiment</p>
+            <h1 id="page-title" tabindex="-1">Play an idea.<br /><em>Hear where it goes.</em></h1>
+            <p class="lede">Record a small phrase or bring a MIDI file. A piano Transformer will listen, then compose a new continuation in its wake.</p>
+          </div>
+        </section>
 
       <section class="studio" aria-label="Music generation studio">
         <div class="studio-head">
@@ -259,12 +267,13 @@
         <p>Built as a non-commercial research demo using a motif encoder/decoder trained on the MAESTRO v3 piano dataset.</p>
         <div><span>Complete-note events</span><span>10 ms timing</span><span>CPU inference</span></div>
       </section>
-    </main>
+      </main>
 
-    <footer>
-      <span>Motif · Piano continuation studio</span>
-      <span>MAESTRO is licensed CC BY-NC-SA 4.0</span>
-    </footer>
+      <footer>
+        <span>Motif · Piano continuation studio</span>
+        <span>MAESTRO is licensed CC BY-NC-SA 4.0</span>
+      </footer>
+    </div>
 
     <script src="/static/app.js" defer></script>
   </body>
