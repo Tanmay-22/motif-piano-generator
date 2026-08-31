@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -97,6 +98,39 @@ def parse_recorded_notes(raw: str) -> list[RecordedNote]:
     return [RecordedNote.from_mapping(value) for value in values]
 
 
+def parse_editable_notes(raw: str) -> list[RecordedNote]:
+    """Validate a complete edited result for temporary MIDI export."""
+
+    try:
+        values = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Edited MIDI data is not valid JSON.") from exc
+    if not isinstance(values, list) or not 1 <= len(values) <= 2_000:
+        raise ValueError("Edited MIDI must contain between 1 and 2,000 notes.")
+
+    notes: list[RecordedNote] = []
+    for value in values:
+        if not isinstance(value, dict):
+            raise ValueError("Each edited note must be an object.")
+        try:
+            pitch = int(value["pitch"])
+            start = float(value["start"])
+            end = float(value["end"])
+            velocity = int(value.get("velocity", 100))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Each edited note needs numeric pitch, start, end, and velocity values.") from exc
+        if not math.isfinite(start) or not math.isfinite(end):
+            raise ValueError("Edited note times must be finite numbers.")
+        if not 21 <= pitch <= 108:
+            raise ValueError("Piano pitches must be between MIDI 21 and 108.")
+        if start < 0 or end <= start or end > 60:
+            raise ValueError("Edited notes must use valid times between 0 and 60 seconds.")
+        if not 1 <= velocity <= 127:
+            raise ValueError("MIDI velocity must be between 1 and 127.")
+        notes.append(RecordedNote(pitch=pitch, start=start, end=end, velocity=velocity))
+    return sorted(notes, key=lambda note: (note.start, note.pitch, note.end))
+
+
 async def motif_from_request(
     tokenizer: MidiTokenizer,
     motif_json: str | None,
@@ -183,6 +217,22 @@ async def analyze_motif(
             "median_note_duration": features.median_note_duration,
             "bass_and_treble": features.bass_and_treble,
         },
+    }
+
+
+@app.post("/api/export-midi")
+async def export_edited_midi(notes_json: str = Form(...)) -> dict[str, object]:
+    """Create an ephemeral MIDI download from browser-edited note data."""
+
+    try:
+        notes = parse_editable_notes(notes_json)
+        midi_bytes = analysis_tokenizer.notes_to_midi_bytes(notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "midi_base64": base64.b64encode(midi_bytes).decode("ascii"),
+        "note_count": len(notes),
+        "duration_seconds": max(note.end for note in notes),
     }
 
 

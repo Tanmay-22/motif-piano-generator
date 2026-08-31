@@ -246,9 +246,32 @@ kbd { border: 1px solid #3e403c; border-bottom-width: 2px; border-radius: 3px; p
 .computer-mapped .key-label { color: #574c88; font-weight: 700; }
 .piano-key.black.computer-mapped .key-label { color: #d8d1ff; }
 
-.motif-timeline { margin-top: 12px; border: 1px solid var(--line); border-radius: 11px; background: #11130f; overflow: hidden; }
+.motif-timeline { margin-top: 22px; padding: 18px; border: 1px solid rgba(157,140,255,.24); border-radius: 13px; background: rgba(157,140,255,.035); overflow: hidden; }
 .mini-head { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px 0; color: var(--dim); font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .07em; }
-#motif-roll { display: block; width: 100%; height: 92px; }
+#motif-roll { display: block; width: 100%; height: 170px; cursor: default; touch-action: none; }
+
+.editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 13px; }
+.editor-heading h3 { margin: 4px 0 0; font-size: 16px; }
+.editor-heading > span, .selection-regenerate p { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 9px; line-height: 1.5; }
+.editor-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(9,11,9,.48); }
+.editor-tool-group, .editor-history-actions { display: flex; align-items: center; gap: 6px; }
+.editor-toolbar .icon-button { border-radius: 7px; padding: 7px 9px; }
+.editor-toolbar .icon-button.active { border-color: rgba(216,255,98,.48); background: var(--accent-soft); color: var(--accent); }
+.editor-toolbar button:disabled, .editor-toolbar .disabled { opacity: .35; cursor: not-allowed; }
+.editor-select-label, .velocity-control { display: flex; align-items: center; gap: 7px; color: var(--dim); font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
+.editor-select-label select { height: 30px; border: 1px solid var(--line); border-radius: 7px; background: #171916; color: var(--muted); padding: 0 7px; font-family: var(--mono); font-size: 8px; }
+.velocity-control { flex: 1 1 180px; min-width: 160px; }
+.velocity-control input { min-width: 80px; flex: 1; }
+.velocity-control output { min-width: 24px; color: var(--accent); text-align: right; }
+.editor-history-actions { margin-left: auto; }
+.editor-download { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 7px; background: #171916; color: var(--muted); padding: 7px 9px; text-decoration: none; font-size: 10px; }
+.editor-download.disabled { pointer-events: none; }
+.danger-button:not(:disabled):hover { border-color: rgba(255,142,118,.5); color: var(--error); }
+.editor-help { margin: 10px 2px; color: var(--dim); font-size: 10px; line-height: 1.5; }
+.editable-roll-stage { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #11130f; }
+canvas[data-editor-mode="pointer"] { cursor: default; }
+canvas[data-editor-mode="add"] { cursor: crosshair; }
+canvas[data-editor-mode="range"] { cursor: col-resize; }
 
 .upload-zone { min-height: 242px; margin-top: 28px; border: 1px dashed #484a45; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); cursor: pointer; transition: border .2s, background .2s; }
 .upload-zone:hover, .upload-zone.dragging { border-color: var(--accent); background: var(--accent-soft); }
@@ -306,6 +329,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .roll-legend span::before { content: ""; width: 15px; height: 4px; border-radius: 2px; background: var(--violet); }
 .roll-legend .legend-continuation::before { background: var(--accent); }
 .roll-actions .icon-button { border-radius: 7px; }
+.result-editor-toolbar { margin-bottom: 8px; }
+.selection-regenerate { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 38px; margin-bottom: 8px; }
+.selection-regenerate .icon-button { flex: 0 0 auto; border-radius: 7px; }
+.selection-regenerate .icon-button:not(:disabled) { border-color: rgba(216,255,98,.38); color: var(--accent); }
 .piano-roll-stage { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: #11130f; }
 .piano-roll-scroll { width: 100%; overflow-x: auto; scrollbar-color: #3b3d38 #151714; scrollbar-width: thin; }
 #piano-roll { display: block; width: 100%; height: 260px; background: #11130f; cursor: crosshair; }
@@ -325,6 +352,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .speed-control button { border: 0; border-radius: 5px; background: transparent; color: var(--muted); padding: 6px 7px; cursor: pointer; font-family: var(--mono); font-size: 8px; }
 .speed-control button.active { background: #2c2f2a; color: var(--accent); }
 .download-button { background: transparent; }
+.download-button.disabled { opacity: .4; pointer-events: none; }
 .generation-insight { display: grid; grid-template-columns: minmax(230px, 1.15fr) minmax(0, 1.85fr); gap: 36px; margin-top: 24px; padding: 21px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.018); }
 .generation-insight .micro-label { color: var(--accent); }
 .insight-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; }
@@ -375,6 +403,12 @@ footer { min-height: 76px; border-top: 1px solid var(--line); display: flex; jus
   .generation-title, .generate-button { grid-column: auto; }
   .roll-toolbar, .transport-primary, .download-group { align-items: flex-start; flex-wrap: wrap; }
   .roll-toolbar { flex-direction: column; }
+  .editor-heading, .selection-regenerate { align-items: flex-start; flex-direction: column; }
+  .editor-toolbar { align-items: stretch; }
+  .editor-tool-group { width: 100%; }
+  .editor-tool-group .icon-button { flex: 1; }
+  .editor-history-actions { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .velocity-control { flex-basis: 100%; }
   .speed-control { width: max-content; }
   .analysis-stats { grid-template-columns: 1fr 1fr; }
   .insight-stats { grid-template-columns: 1fr 1fr; }

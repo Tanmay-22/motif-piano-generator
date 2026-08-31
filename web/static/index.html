@@ -112,10 +112,6 @@
             <div class="piano" id="piano" aria-label="Two-octave virtual piano"></div>
           </div>
 
-          <div class="motif-timeline hidden" id="motif-timeline">
-            <div class="mini-head"><span>Recorded motif</span><span>Leading silence is trimmed automatically</span></div>
-            <canvas id="motif-roll" width="1120" height="100" aria-label="Recorded motif piano roll"></canvas>
-          </div>
         </div>
 
         <div id="upload-panel" class="hidden" role="tabpanel" aria-labelledby="upload-tab">
@@ -128,6 +124,45 @@
           </label>
           <button class="upload-preview text-button" id="preview-upload-button" type="button" disabled>Preview uploaded motif</button>
         </div>
+
+        <section class="roll-editor motif-timeline hidden" id="motif-timeline" aria-labelledby="motif-editor-title">
+          <div class="editor-heading">
+            <div>
+              <span class="micro-label">Editable MIDI</span>
+              <h3 id="motif-editor-title">Motif piano roll</h3>
+            </div>
+            <span id="motif-editor-status">Select a note to edit it</span>
+          </div>
+          <div class="editor-toolbar" data-editor="motif" role="toolbar" aria-label="Motif editing tools">
+            <div class="editor-tool-group" aria-label="Editing mode">
+              <button class="icon-button active" type="button" data-editor-mode="pointer" aria-pressed="true">Pointer</button>
+              <button class="icon-button" type="button" data-editor-mode="add" aria-pressed="false">Add note</button>
+              <button class="icon-button" type="button" data-editor-mode="range" aria-pressed="false">Select range</button>
+            </div>
+            <label class="editor-select-label" for="motif-snap">Snap
+              <select id="motif-snap" data-editor-snap>
+                <option value="0">Off</option>
+                <option value="0.125" selected>1/16 · 120 BPM</option>
+                <option value="0.25">1/8 · 120 BPM</option>
+                <option value="0.5">1/4 · 120 BPM</option>
+              </select>
+            </label>
+            <label class="velocity-control" for="motif-velocity">Velocity
+              <input id="motif-velocity" data-editor-velocity type="range" min="1" max="127" value="90" disabled />
+              <output data-editor-velocity-value for="motif-velocity">90</output>
+            </label>
+            <div class="editor-history-actions">
+              <button class="icon-button" type="button" data-editor-undo disabled>Undo</button>
+              <button class="icon-button" type="button" data-editor-redo disabled>Redo</button>
+              <button class="icon-button danger-button" type="button" data-editor-delete disabled>Delete</button>
+              <a class="icon-button editor-download disabled" id="download-motif-button" download="edited-motif.mid" aria-disabled="true">Download motif</a>
+            </div>
+          </div>
+          <p class="editor-help">Drag a note to change timing and pitch. Drag its right edge to resize. Use Add note to draw, or Select range to group notes.</p>
+          <div class="editable-roll-stage">
+            <canvas id="motif-roll" width="1120" height="170" aria-label="Editable motif piano roll"></canvas>
+          </div>
+        </section>
 
         <section class="motif-analysis hidden" id="motif-analysis" aria-labelledby="analysis-title">
           <div class="analysis-copy">
@@ -222,11 +257,39 @@
             <button class="icon-button" id="fullscreen-button" type="button">Fullscreen</button>
           </div>
         </div>
+        <div class="editor-toolbar result-editor-toolbar" data-editor="result" role="toolbar" aria-label="Generated MIDI editing tools">
+          <div class="editor-tool-group" aria-label="Editing mode">
+            <button class="icon-button active" type="button" data-editor-mode="pointer" aria-pressed="true">Pointer</button>
+            <button class="icon-button" type="button" data-editor-mode="add" aria-pressed="false">Add note</button>
+            <button class="icon-button" type="button" data-editor-mode="range" aria-pressed="false">Select range</button>
+          </div>
+          <label class="editor-select-label" for="result-snap">Snap
+            <select id="result-snap" data-editor-snap>
+              <option value="0">Off</option>
+              <option value="0.125" selected>1/16 · 120 BPM</option>
+              <option value="0.25">1/8 · 120 BPM</option>
+              <option value="0.5">1/4 · 120 BPM</option>
+            </select>
+          </label>
+          <label class="velocity-control" for="result-velocity">Velocity
+            <input id="result-velocity" data-editor-velocity type="range" min="1" max="127" value="90" disabled />
+            <output data-editor-velocity-value for="result-velocity">90</output>
+          </label>
+          <div class="editor-history-actions">
+            <button class="icon-button" type="button" data-editor-undo disabled>Undo</button>
+            <button class="icon-button" type="button" data-editor-redo disabled>Redo</button>
+            <button class="icon-button danger-button" type="button" data-editor-delete disabled>Delete</button>
+          </div>
+        </div>
+        <div class="selection-regenerate">
+          <p id="result-editor-status">Drag notes to edit, or select a continuation range to regenerate it.</p>
+          <button class="icon-button" id="regenerate-selection-button" type="button" disabled>Regenerate selected range</button>
+        </div>
         <div class="piano-roll-stage" id="piano-roll-stage">
           <div class="piano-roll-scroll" id="piano-roll-scroll">
             <canvas id="piano-roll" width="1120" height="260" aria-label="Generated music piano roll. Click to seek."></canvas>
           </div>
-          <span class="seek-hint">Click the piano roll to seek</span>
+          <span class="seek-hint">Pointer · drag notes or click empty space to seek</span>
         </div>
         <div class="transport">
           <div class="transport-primary">

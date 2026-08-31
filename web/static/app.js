@@ -14,6 +14,7 @@
     playbackNotes: [], playbackKind: null, playbackOffset: 0, playbackStartedAt: 0,
     playbackDuration: 0, playbackSpeed: 1, playing: false, playbackFrame: null, rollZoom: 1,
     heroLocked: false, heroFrame: null, heroScrollFloor: 0, heroFocusAfterLock: false,
+    motifMidiUrl: null, editNoteCounter: 0, regeneratingSelection: false, activeEditorKind: "motif",
   };
 
   const pitchNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
@@ -59,6 +60,10 @@
       { pitch: 55, start: 3, end: 4.05, velocity: 76 }, { pitch: 59, start: 3, end: 4.05, velocity: 86 }, { pitch: 62, start: 3, end: 4.05, velocity: 82 }, { pitch: 65, start: 3, end: 4.05, velocity: 78 },
     ],
   };
+  const editors = {
+    motif: { mode: "pointer", snap: 0.125, selected: new Set(), range: null, history: [], future: [], gesture: null, exportToken: 0, velocityEditing: false },
+    result: { mode: "pointer", snap: 0.125, selected: new Set(), range: null, history: [], future: [], gesture: null, exportToken: 0, velocityEditing: false },
+  };
 
   function noteName(pitch) {
     return `${pitchNames[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
@@ -80,6 +85,28 @@
   function formatTime(seconds) {
     const safe = Math.max(0, Number(seconds) || 0);
     return `${Math.floor(safe / 60)}:${Math.floor(safe % 60).toString().padStart(2, "0")}`;
+  }
+
+  function noteWithId(note) {
+    return {
+      pitch: Number(note.pitch), start: Number(note.start), end: Number(note.end),
+      velocity: Number(note.velocity ?? 100), _id: note._id || `edit-note-${++state.editNoteCounter}`,
+    };
+  }
+
+  function notesWithIds(notes) { return notes.map(noteWithId); }
+  function cloneNotes(notes) { return notes.map((note) => ({ ...note })); }
+  function currentMotifNotes() { return state.source === "record" ? state.notes : state.uploadNotes; }
+
+  function resetEditor(kind) {
+    const editor = editors[kind];
+    editor.selected.clear();
+    editor.range = null;
+    editor.history = [];
+    editor.future = [];
+    editor.gesture = null;
+    editor.velocityEditing = false;
+    syncEditorControls(kind);
   }
 
   function paintHeroProgress(progress) {
@@ -274,7 +301,7 @@
     const active = state.activeNotes.get(pitch);
     if (active && voiceId.startsWith("manual:")) {
       active.end = Math.max(active.start + 0.03, (performance.now() - state.recordingStartedAt) / 1000);
-      state.notes.push(active);
+      state.notes.push(noteWithId(active));
       state.notes.sort((left, right) => left.start - right.start || left.pitch - right.pitch);
       state.activeNotes.delete(pitch);
       updateRecorder();
@@ -402,6 +429,7 @@
   function actualStartRecording() {
     stopPlayback(true);
     state.notes = [];
+    resetEditor("motif");
     state.activeNotes.clear();
     state.recording = true;
     state.recordingStartedAt = performance.now();
@@ -456,6 +484,7 @@
     updateRecorder();
     updateRecordingStatus();
     analyzeCurrentMotif();
+    refreshMidiDownload("motif");
   }
 
   function updateRecorder() {
@@ -466,7 +495,7 @@
     $("#note-count").textContent = `${state.notes.length} note${state.notes.length === 1 ? "" : "s"}`;
     $("#preview-motif-button").disabled = state.notes.length === 0;
     $("#undo-button").disabled = state.notes.length === 0 || state.recording;
-    $("#motif-timeline").classList.toggle("hidden", state.notes.length === 0);
+    updateMotifEditor();
     if (state.notes.length && state.playbackKind === "motif") drawMotifRoll(currentPlaybackTime());
     if (elapsed >= 30 && state.recording) stopRecording();
   }
@@ -476,6 +505,7 @@
     if (state.countingIn) cancelCountIn();
     stopPlayback(true);
     state.notes = [];
+    resetEditor("motif");
     state.activeNotes.clear();
     state.motifAnalysis = null;
     $("#record-label").textContent = "Start recording";
@@ -489,6 +519,7 @@
     stopPlayback(true);
     const lastOnset = Math.max(...state.notes.map((note) => note.start));
     state.notes = state.notes.filter((note) => Math.abs(note.start - lastOnset) > 0.035);
+    editors.motif.selected.clear();
     updateRecorder();
     updateRecordingStatus(state.notes.length ? "Removed the last note or chord." : "Motif cleared.");
     if (state.notes.length >= 2) analyzeCurrentMotif();
@@ -502,11 +533,13 @@
     switchSource("record");
     stopPlayback(true);
     const octaveOffset = (state.keyboardOctave - 4) * 12;
-    state.notes = notes.map((note) => ({ ...note, pitch: note.pitch + octaveOffset }));
+    state.notes = notesWithIds(notes.map((note) => ({ ...note, pitch: note.pitch + octaveOffset })));
+    resetEditor("motif");
     $("#record-label").textContent = "Record again";
     updateRecorder();
     updateRecordingStatus(`Example loaded for octave ${state.keyboardOctave}. Listen, edit, or compose from it.`);
     analyzeCurrentMotif();
+    refreshMidiDownload("motif");
     startPlayback(state.notes, 0, "motif");
   }
 
@@ -597,7 +630,7 @@
     const total = state.resultNotes.length ? Math.max(...state.resultNotes.map((note) => Number(note.end))) : 0;
     $("#play-time").textContent = `${formatTime(current)} / ${formatTime(total)}`;
     if (state.resultNotes.length) drawPianoRoll(isResultPlaying || state.playbackKind === "result" ? current : null);
-    if (state.notes.length) drawMotifRoll(state.playbackKind === "motif" ? currentPlaybackTime() : null);
+    if (currentMotifNotes().length) drawMotifRoll(state.playbackKind === "motif" ? currentPlaybackTime() : null);
   }
 
   function followPlayhead(current) {
@@ -610,6 +643,7 @@
   }
 
   function switchSource(source) {
+    if (state.source !== source) resetEditor("motif");
     state.source = source;
     const record = source === "record";
     $("#record-tab").classList.toggle("active", record);
@@ -618,6 +652,7 @@
     $("#upload-tab").setAttribute("aria-selected", String(!record));
     $("#record-panel").classList.toggle("hidden", !record);
     $("#upload-panel").classList.toggle("hidden", record);
+    updateMotifEditor();
     if (record && state.notes.length >= 2) analyzeCurrentMotif();
     if (!record && $("#midi-file").files[0]) analyzeCurrentMotif();
   }
@@ -639,7 +674,7 @@
 
   function syncGenerateAvailability() {
     const button = $("#generate-button");
-    button.disabled = state.generating || state.modelReady === false;
+    button.disabled = state.generating || state.regeneratingSelection || state.modelReady === false;
     if (!state.generating) button.querySelector("span:first-child").textContent = state.modelReady === false ? "Model unavailable" : "Generate continuation";
   }
 
@@ -672,22 +707,26 @@
 
   async function analyzeCurrentMotif() {
     const file = $("#midi-file").files[0];
-    if ((state.source === "record" && state.notes.length < 2) || (state.source === "upload" && !file)) {
+    const motifNotes = currentMotifNotes();
+    if (motifNotes.length < 2 && (state.source === "record" || !file)) {
       $("#motif-analysis").classList.add("hidden");
       return;
     }
     if (state.analysisController) state.analysisController.abort();
     state.analysisController = new AbortController();
     const form = new FormData();
-    if (state.source === "record") form.append("motif_json", JSON.stringify(state.notes));
+    if (motifNotes.length >= 2) form.append("motif_json", JSON.stringify(motifNotes));
     else form.append("midi_file", file);
     try {
       const response = await fetch("/api/analyze", { method: "POST", body: form, signal: state.analysisController.signal });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "This motif could not be analyzed.");
-      if (state.source === "upload") {
-        state.uploadNotes = payload.notes;
+      if (state.source === "upload" && state.uploadNotes.length === 0) {
+        state.uploadNotes = notesWithIds(payload.notes);
+        resetEditor("motif");
         $("#preview-upload-button").disabled = false;
+        updateMotifEditor();
+        refreshMidiDownload("motif");
       }
       renderMotifAnalysis(payload.features);
     } catch (error) {
@@ -753,10 +792,10 @@
 
   async function generate() {
     hideNotice();
-    const file = $("#midi-file").files[0];
     if (state.source === "record" && state.recording) stopRecording();
-    if (state.source === "record" && state.notes.length < 2) return showNotice("Record at least two notes before generating.");
-    if (state.source === "upload" && !file) return showNotice("Choose a MIDI file before generating.");
+    const motifNotes = currentMotifNotes();
+    if (state.source === "record" && motifNotes.length < 2) return showNotice("Record at least two notes before generating.");
+    if (state.source === "upload" && motifNotes.length < 2) return showNotice("Wait for the uploaded MIDI to finish loading, then try again.");
     stopPlayback(true);
     state.generating = true;
     syncGenerateAvailability();
@@ -765,8 +804,7 @@
     form.append("duration_seconds", String(state.duration));
     form.append("temperature", String(state.temperature));
     form.append("category", state.category);
-    if (state.source === "record") form.append("motif_json", JSON.stringify(state.notes));
-    else form.append("midi_file", file);
+    form.append("motif_json", JSON.stringify(motifNotes));
     const controller = new AbortController();
     const clientTimeout = window.setTimeout(() => controller.abort(), 90000);
     try {
@@ -774,7 +812,8 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "The model could not generate this time.");
       state.resultPayload = payload;
-      state.resultNotes = payload.notes;
+      state.resultNotes = notesWithIds(payload.notes);
+      resetEditor("result");
       state.resultMotifEnd = Number(payload.motif_end_seconds) || 0;
       state.playbackKind = "result";
       state.playbackOffset = 0;
@@ -784,6 +823,8 @@
       const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       state.resultMidiUrl = URL.createObjectURL(new Blob([bytes], { type: "audio/midi" }));
       $("#download-button").href = state.resultMidiUrl;
+      $("#download-button").classList.remove("disabled");
+      $("#download-button").removeAttribute("aria-disabled");
       $("#result-duration").textContent = `${Number(payload.duration_seconds).toFixed(1)} seconds`;
       $("#result-card").classList.remove("hidden");
       updateResultContext(payload);
@@ -801,15 +842,31 @@
     }
   }
 
-  function paintPianoRoll(context, width, height, notes, motifEnd = 0, playhead = null) {
+  function pianoRollGeometry(width, height, notes) {
+    const minPitch = notes.length ? Math.max(21, Math.min(...notes.map((note) => note.pitch)) - 2) : 48;
+    const maxPitch = notes.length ? Math.min(108, Math.max(...notes.map((note) => note.pitch)) + 2) : 72;
+    const pitchSpan = Math.max(5, maxPitch - minPitch + 1);
+    const maxTime = Math.max(0.5, ...notes.map((note) => Number(note.end)));
+    const noteHeight = Math.max(3.5, Math.min(12, (height / pitchSpan) * 0.68));
+    return { width, height, minPitch, maxPitch, pitchSpan, maxTime, noteHeight };
+  }
+
+  function pianoRollNoteRect(note, geometry) {
+    return {
+      x: (note.start / geometry.maxTime) * geometry.width,
+      y: geometry.height - ((note.pitch - geometry.minPitch + 0.7) / geometry.pitchSpan) * geometry.height,
+      width: Math.max(3, ((note.end - note.start) / geometry.maxTime) * geometry.width),
+      height: geometry.noteHeight,
+    };
+  }
+
+  function paintPianoRoll(context, width, height, notes, motifEnd = 0, playhead = null, editor = null) {
     context.clearRect(0, 0, width, height);
     context.fillStyle = "#11130f";
     context.fillRect(0, 0, width, height);
     if (!notes.length) return;
-    const minPitch = Math.max(21, Math.min(...notes.map((note) => note.pitch)) - 2);
-    const maxPitch = Math.min(108, Math.max(...notes.map((note) => note.pitch)) + 2);
-    const pitchSpan = Math.max(5, maxPitch - minPitch + 1);
-    const maxTime = Math.max(0.1, ...notes.map((note) => Number(note.end)));
+    const geometry = pianoRollGeometry(width, height, notes);
+    const { minPitch, maxPitch, pitchSpan, maxTime } = geometry;
     context.lineWidth = 1;
     for (let pitch = minPitch; pitch <= maxPitch; pitch += 1) {
       const y = height - ((pitch - minPitch + 0.5) / pitchSpan) * height;
@@ -833,18 +890,37 @@
       context.strokeStyle = "rgba(157,140,255,.7)";
       context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
     }
-    const noteHeight = Math.max(3.5, Math.min(12, (height / pitchSpan) * 0.68));
+    if (editor?.range) {
+      const rangeStart = Math.min(editor.range.start, editor.range.end);
+      const rangeEnd = Math.max(editor.range.start, editor.range.end);
+      const x = (rangeStart / maxTime) * width;
+      const rangeWidth = Math.max(1, ((rangeEnd - rangeStart) / maxTime) * width);
+      context.fillStyle = "rgba(216,255,98,.09)";
+      context.fillRect(x, 0, rangeWidth, height);
+      context.strokeStyle = "rgba(216,255,98,.72)";
+      context.setLineDash([5, 4]);
+      context.strokeRect(x + .5, .5, Math.max(0, rangeWidth - 1), height - 1);
+      context.setLineDash([]);
+    }
     notes.forEach((note) => {
-      const x = (note.start / maxTime) * width;
-      const y = height - ((note.pitch - minPitch + 0.7) / pitchSpan) * height;
-      const noteWidth = Math.max(3, ((note.end - note.start) / maxTime) * width);
+      const rect = pianoRollNoteRect(note, geometry);
       const active = playhead !== null && note.start <= playhead && note.end > playhead;
+      const selected = Boolean(editor?.selected.has(note._id));
       context.save();
       context.globalAlpha = active ? 1 : 0.52 + (note.velocity / 127) * 0.42;
       context.fillStyle = note.start < motifEnd ? "#9d8cff" : "#d8ff62";
       if (active) { context.shadowColor = context.fillStyle; context.shadowBlur = 12; }
-      context.fillRect(x, y, noteWidth, noteHeight);
-      if (active) { context.strokeStyle = "#ffffff"; context.lineWidth = 1; context.strokeRect(x - 1, y - 1, noteWidth + 2, noteHeight + 2); }
+      context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      if (selected || active) {
+        context.globalAlpha = 1;
+        context.strokeStyle = selected ? "#ffffff" : "rgba(255,255,255,.88)";
+        context.lineWidth = selected ? 1.5 : 1;
+        context.strokeRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
+      }
+      if (selected) {
+        context.fillStyle = "rgba(255,255,255,.9)";
+        context.fillRect(rect.x + Math.max(0, rect.width - 3), rect.y, Math.min(3, rect.width), rect.height);
+      }
       context.restore();
     });
     if (playhead !== null) {
@@ -860,7 +936,7 @@
     }
   }
 
-  function drawCanvas(canvas, notes, motifEnd, playhead) {
+  function drawCanvas(canvas, notes, motifEnd, playhead, editorKind = null) {
     const ratio = Math.min(2, window.devicePixelRatio || 1);
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -872,14 +948,456 @@
     }
     const context = canvas.getContext("2d");
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    paintPianoRoll(context, rect.width, rect.height, notes, motifEnd, playhead);
+    paintPianoRoll(context, rect.width, rect.height, notes, motifEnd, playhead, editorKind ? editors[editorKind] : null);
   }
 
-  function drawPianoRoll(playhead = null) { drawCanvas($("#piano-roll"), state.resultNotes, state.resultMotifEnd, playhead); }
+  function drawPianoRoll(playhead = null) { drawCanvas($("#piano-roll"), state.resultNotes, state.resultMotifEnd, playhead, "result"); }
 
   function drawMotifRoll(playhead = null) {
-    const end = Math.max(0, ...state.notes.map((note) => note.end));
-    drawCanvas($("#motif-roll"), state.notes, end + 0.01, playhead);
+    const notes = currentMotifNotes();
+    const end = Math.max(0, ...notes.map((note) => note.end));
+    drawCanvas($("#motif-roll"), notes, end + 0.01, playhead, "motif");
+  }
+
+  function editorNotes(kind) { return kind === "motif" ? currentMotifNotes() : state.resultNotes; }
+  function editorCanvas(kind) { return $(kind === "motif" ? "#motif-roll" : "#piano-roll"); }
+
+  function setEditorNotes(kind, notes) {
+    const sorted = notesWithIds(notes).sort((left, right) => left.start - right.start || left.pitch - right.pitch || left.end - right.end);
+    if (kind === "motif") {
+      if (state.source === "record") state.notes = sorted;
+      else state.uploadNotes = sorted;
+    } else state.resultNotes = sorted;
+  }
+
+  function updateMotifEditor() {
+    const notes = currentMotifNotes();
+    const shouldShow = notes.length > 0 || editors.motif.history.length > 0;
+    $("#motif-timeline").classList.toggle("hidden", !shouldShow);
+    if (shouldShow) requestAnimationFrame(() => drawMotifRoll(state.playbackKind === "motif" ? currentPlaybackTime() : null));
+    syncEditorControls("motif");
+  }
+
+  function syncEditorControls(kind) {
+    const toolbar = document.querySelector(`.editor-toolbar[data-editor="${kind}"]`);
+    if (!toolbar) return;
+    const editor = editors[kind];
+    const notes = editorNotes(kind);
+    const selectedNotes = notes.filter((note) => editor.selected.has(note._id));
+    toolbar.querySelectorAll("[data-editor-mode]").forEach((button) => {
+      const active = button.dataset.editorMode === editor.mode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    const velocity = toolbar.querySelector("[data-editor-velocity]");
+    const velocityValue = toolbar.querySelector("[data-editor-velocity-value]");
+    velocity.disabled = selectedNotes.length === 0;
+    if (selectedNotes.length) {
+      const average = Math.round(selectedNotes.reduce((sum, note) => sum + note.velocity, 0) / selectedNotes.length);
+      velocity.value = String(average);
+      velocityValue.value = String(average);
+      velocityValue.textContent = String(average);
+    }
+    toolbar.querySelector("[data-editor-undo]").disabled = editor.history.length === 0;
+    toolbar.querySelector("[data-editor-redo]").disabled = editor.future.length === 0;
+    toolbar.querySelector("[data-editor-delete]").disabled = selectedNotes.length === 0;
+    editorCanvas(kind).dataset.editorMode = editor.mode;
+
+    const status = $(kind === "motif" ? "#motif-editor-status" : "#result-editor-status");
+    if (editor.range) {
+      const start = Math.min(editor.range.start, editor.range.end);
+      const end = Math.max(editor.range.start, editor.range.end);
+      status.textContent = `${selectedNotes.length} note${selectedNotes.length === 1 ? "" : "s"} in ${start.toFixed(2)}–${end.toFixed(2)}s`;
+    } else if (selectedNotes.length) {
+      const note = selectedNotes[0];
+      status.textContent = selectedNotes.length === 1
+        ? `${noteName(note.pitch)} · ${note.start.toFixed(2)}s · ${(note.end - note.start).toFixed(2)}s · velocity ${note.velocity}`
+        : `${selectedNotes.length} notes selected`;
+    } else status.textContent = kind === "motif" ? "Select a note to edit it" : "Drag notes to edit, or select a continuation range to regenerate it.";
+
+    if (kind === "result") {
+      const range = editor.range;
+      const validRange = range && Math.max(range.start, range.end) - Math.max(Math.min(range.start, range.end), state.resultMotifEnd) >= 0.25;
+      $("#regenerate-selection-button").disabled = !validRange || state.regeneratingSelection || state.generating;
+    }
+  }
+
+  function pushEditorHistory(kind) {
+    const editor = editors[kind];
+    editor.history.push(cloneNotes(editorNotes(kind)));
+    if (editor.history.length > 50) editor.history.shift();
+    editor.future = [];
+  }
+
+  function restoreEditorHistory(kind, direction) {
+    const editor = editors[kind];
+    const source = direction === "undo" ? editor.history : editor.future;
+    const destination = direction === "undo" ? editor.future : editor.history;
+    if (!source.length) return;
+    destination.push(cloneNotes(editorNotes(kind)));
+    setEditorNotes(kind, source.pop());
+    editor.selected.clear();
+    editor.range = null;
+    finishEditorChange(kind, direction === "undo" ? "Edit undone." : "Edit restored.");
+  }
+
+  function snapped(value, step) { return step > 0 ? Math.round(value / step) * step : value; }
+
+  function eventRollPoint(event, canvas, geometry) {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+    const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+    const time = (x / Math.max(1, rect.width)) * geometry.maxTime;
+    const pitch = Math.max(21, Math.min(108, Math.round(geometry.minPitch + ((rect.height - y) / rect.height) * geometry.pitchSpan - 0.36)));
+    return { x, y, time, pitch };
+  }
+
+  function hitTestNote(notes, geometry, point) {
+    for (let index = notes.length - 1; index >= 0; index -= 1) {
+      const note = notes[index];
+      const rect = pianoRollNoteRect(note, geometry);
+      if (point.x >= rect.x - 2 && point.x <= rect.x + rect.width + 2 && point.y >= rect.y - 3 && point.y <= rect.y + rect.height + 3) {
+        const resizeWidth = Math.min(7, Math.max(2, rect.width * 0.3));
+        return { note, resize: point.x >= rect.x + rect.width - resizeWidth };
+      }
+    }
+    return null;
+  }
+
+  function selectNotesInRange(kind) {
+    const editor = editors[kind];
+    editor.selected.clear();
+    if (!editor.range) return;
+    const start = Math.min(editor.range.start, editor.range.end);
+    const end = Math.max(editor.range.start, editor.range.end);
+    editorNotes(kind).forEach((note) => {
+      if (note.end > start && note.start < end) editor.selected.add(note._id);
+    });
+  }
+
+  function handleEditorPointerDown(kind, event) {
+    if (state.recording || state.regeneratingSelection) return;
+    event.preventDefault();
+    stopPlayback(false);
+    state.activeEditorKind = kind;
+    const editor = editors[kind];
+    const notes = editorNotes(kind);
+    const canvas = editorCanvas(kind);
+    const rect = canvas.getBoundingClientRect();
+    const geometry = pianoRollGeometry(rect.width, rect.height, notes);
+    const point = eventRollPoint(event, canvas, geometry);
+    canvas.setPointerCapture(event.pointerId);
+
+    if (editor.mode === "range") {
+      const time = snapped(point.time, editor.snap);
+      editor.range = { start: time, end: time };
+      editor.selected.clear();
+      editor.gesture = { type: "range", anchor: time, geometry };
+      syncEditorControls(kind);
+      kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+      return;
+    }
+
+    if (editor.mode === "add") {
+      pushEditorHistory(kind);
+      const start = Math.max(0, snapped(point.time, editor.snap));
+      const minimum = editor.snap || 0.05;
+      const note = noteWithId({ pitch: point.pitch, start, end: Math.min(60, start + Math.max(minimum, 0.25)), velocity: 90 });
+      setEditorNotes(kind, [...notes, note]);
+      editor.selected = new Set([note._id]);
+      editor.range = null;
+      editor.gesture = { type: "add", noteId: note._id, anchor: start, geometry, changed: true };
+      syncEditorControls(kind);
+      kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+      return;
+    }
+
+    const hit = hitTestNote(notes, geometry, point);
+    if (!hit) {
+      editor.selected.clear();
+      editor.range = null;
+      editor.gesture = null;
+      syncEditorControls(kind);
+      if (kind === "result") seekResult(event);
+      else drawMotifRoll();
+      return;
+    }
+    if (event.shiftKey) {
+      if (editor.selected.has(hit.note._id)) editor.selected.delete(hit.note._id);
+      else editor.selected.add(hit.note._id);
+    } else if (!editor.selected.has(hit.note._id)) editor.selected = new Set([hit.note._id]);
+    editor.range = null;
+    editor.gesture = {
+      type: hit.resize ? "resize" : "move", anchorPoint: point,
+      original: cloneNotes(notes), geometry, changed: false, historyPushed: false,
+    };
+    syncEditorControls(kind);
+    kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+  }
+
+  function ensureGestureHistory(kind) {
+    const gesture = editors[kind].gesture;
+    if (!gesture || gesture.historyPushed) return;
+    pushEditorHistory(kind);
+    gesture.historyPushed = true;
+  }
+
+  function handleEditorPointerMove(kind, event) {
+    const editor = editors[kind];
+    const gesture = editor.gesture;
+    if (!gesture) return;
+    event.preventDefault();
+    const canvas = editorCanvas(kind);
+    const point = eventRollPoint(event, canvas, gesture.geometry);
+
+    if (gesture.type === "range") {
+      editor.range.end = Math.max(0, snapped(point.time, editor.snap));
+      selectNotesInRange(kind);
+    } else if (gesture.type === "add") {
+      const minimum = editor.snap || 0.05;
+      const cursor = snapped(point.time, editor.snap);
+      const start = Math.max(0, Math.min(gesture.anchor, cursor));
+      const end = Math.min(60, Math.max(gesture.anchor, cursor, start + minimum));
+      setEditorNotes(kind, editorNotes(kind).map((note) => note._id === gesture.noteId ? { ...note, start, end, pitch: point.pitch } : note));
+    } else if (Math.abs(point.x - gesture.anchorPoint.x) > 1 || Math.abs(point.y - gesture.anchorPoint.y) > 1) {
+      ensureGestureHistory(kind);
+      gesture.changed = true;
+      const selectedOriginal = gesture.original.filter((note) => editor.selected.has(note._id));
+      if (gesture.type === "move") {
+        let deltaTime = snapped(point.time - gesture.anchorPoint.time, editor.snap);
+        let deltaPitch = point.pitch - gesture.anchorPoint.pitch;
+        deltaTime = Math.max(-Math.min(...selectedOriginal.map((note) => note.start)), Math.min(60 - Math.max(...selectedOriginal.map((note) => note.end)), deltaTime));
+        deltaPitch = Math.max(21 - Math.min(...selectedOriginal.map((note) => note.pitch)), Math.min(108 - Math.max(...selectedOriginal.map((note) => note.pitch)), deltaPitch));
+        setEditorNotes(kind, gesture.original.map((note) => editor.selected.has(note._id)
+          ? { ...note, start: Math.max(0, note.start + deltaTime), end: note.end + deltaTime, pitch: note.pitch + deltaPitch }
+          : note));
+      } else {
+        const deltaTime = snapped(point.time - gesture.anchorPoint.time, editor.snap);
+        const minimum = editor.snap || 0.03;
+        setEditorNotes(kind, gesture.original.map((note) => editor.selected.has(note._id)
+          ? { ...note, end: Math.min(60, Math.max(note.start + minimum, note.end + deltaTime)) }
+          : note));
+      }
+    }
+    syncEditorControls(kind);
+    kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+  }
+
+  function handleEditorPointerUp(kind, event) {
+    const editor = editors[kind];
+    const gesture = editor.gesture;
+    if (!gesture) return;
+    try { editorCanvas(kind).releasePointerCapture(event.pointerId); } catch { /* already released */ }
+    editor.gesture = null;
+    if (gesture.type === "range") {
+      if (Math.abs(editor.range.end - editor.range.start) < 0.02) {
+        editor.range = null;
+        editor.selected.clear();
+      } else selectNotesInRange(kind);
+      syncEditorControls(kind);
+      kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+      return;
+    }
+    if (gesture.type === "add" || gesture.changed) finishEditorChange(kind, gesture.type === "add" ? "Note added." : "Notes updated.");
+    else syncEditorControls(kind);
+  }
+
+  function deleteEditorSelection(kind) {
+    const editor = editors[kind];
+    if (!editor.selected.size) return;
+    pushEditorHistory(kind);
+    setEditorNotes(kind, editorNotes(kind).filter((note) => !editor.selected.has(note._id)));
+    editor.selected.clear();
+    editor.range = null;
+    finishEditorChange(kind, "Selected notes deleted.");
+  }
+
+  function applyEditorVelocity(kind, value, commit = false) {
+    const editor = editors[kind];
+    if (!editor.selected.size) return;
+    if (!editor.velocityEditing) {
+      pushEditorHistory(kind);
+      editor.velocityEditing = true;
+    }
+    const velocity = Math.max(1, Math.min(127, Number(value)));
+    setEditorNotes(kind, editorNotes(kind).map((note) => editor.selected.has(note._id) ? { ...note, velocity } : note));
+    syncEditorControls(kind);
+    kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+    if (commit) {
+      editor.velocityEditing = false;
+      finishEditorChange(kind, "Velocity updated.");
+    }
+  }
+
+  function finishEditorChange(kind, message) {
+    stopPlayback(true);
+    const editor = editors[kind];
+    const validIds = new Set(editorNotes(kind).map((note) => note._id));
+    editor.selected = new Set([...editor.selected].filter((id) => validIds.has(id)));
+    if (kind === "motif") {
+      if (state.source === "record") updateRecorder();
+      else updateMotifEditor();
+      if (currentMotifNotes().length >= 2) analyzeCurrentMotif();
+      else $("#motif-analysis").classList.add("hidden");
+    } else {
+      state.playbackDuration = Math.max(0, ...state.resultNotes.map((note) => note.end));
+      if (state.resultPayload) {
+        state.resultPayload.notes = state.resultNotes;
+        state.resultPayload.duration_seconds = state.playbackDuration;
+      }
+      $("#result-duration").textContent = `${state.playbackDuration.toFixed(1)} seconds`;
+      if (state.resultPayload) updateGenerationInsight(state.resultPayload);
+      updatePlaybackVisuals();
+    }
+    syncEditorControls(kind);
+    const status = $(kind === "motif" ? "#motif-editor-status" : "#result-editor-status");
+    if (message) status.textContent = message;
+    refreshMidiDownload(kind);
+  }
+
+  function setMidiLink(link, binary, kind) {
+    const bytes = Uint8Array.from(atob(binary), (character) => character.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/midi" }));
+    if (kind === "motif") {
+      if (state.motifMidiUrl) URL.revokeObjectURL(state.motifMidiUrl);
+      state.motifMidiUrl = url;
+    } else {
+      if (state.resultMidiUrl) URL.revokeObjectURL(state.resultMidiUrl);
+      state.resultMidiUrl = url;
+    }
+    link.href = url;
+  }
+
+  async function refreshMidiDownload(kind) {
+    const notes = editorNotes(kind);
+    const editor = editors[kind];
+    const token = ++editor.exportToken;
+    const link = $(kind === "motif" ? "#download-motif-button" : "#download-button");
+    if (!notes.length) {
+      link.removeAttribute("href");
+      link.classList.add("disabled");
+      link.setAttribute("aria-disabled", "true");
+      return;
+    }
+    link.classList.add("disabled");
+    link.setAttribute("aria-disabled", "true");
+    const form = new FormData();
+    form.append("notes_json", JSON.stringify(notes));
+    try {
+      const response = await fetch("/api/export-midi", { method: "POST", body: form });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "MIDI export could not be updated.");
+      if (token !== editor.exportToken) return;
+      setMidiLink(link, payload.midi_base64, kind);
+      link.classList.remove("disabled");
+      link.removeAttribute("aria-disabled");
+    } catch (error) {
+      if (token === editor.exportToken) showNotice(error.message);
+    }
+  }
+
+  function initializeEditor(kind) {
+    const toolbar = document.querySelector(`.editor-toolbar[data-editor="${kind}"]`);
+    toolbar.querySelectorAll("[data-editor-mode]").forEach((button) => button.addEventListener("click", () => {
+      state.activeEditorKind = kind;
+      editors[kind].mode = button.dataset.editorMode;
+      editors[kind].range = null;
+      syncEditorControls(kind);
+      kind === "motif" ? drawMotifRoll() : drawPianoRoll();
+    }));
+    toolbar.querySelector("[data-editor-snap]").addEventListener("change", (event) => { editors[kind].snap = Number(event.target.value); });
+    const velocity = toolbar.querySelector("[data-editor-velocity]");
+    velocity.addEventListener("input", (event) => applyEditorVelocity(kind, event.target.value));
+    velocity.addEventListener("change", (event) => applyEditorVelocity(kind, event.target.value, true));
+    toolbar.querySelector("[data-editor-undo]").addEventListener("click", () => restoreEditorHistory(kind, "undo"));
+    toolbar.querySelector("[data-editor-redo]").addEventListener("click", () => restoreEditorHistory(kind, "redo"));
+    toolbar.querySelector("[data-editor-delete]").addEventListener("click", () => deleteEditorSelection(kind));
+    const canvas = editorCanvas(kind);
+    canvas.addEventListener("pointerdown", (event) => handleEditorPointerDown(kind, event));
+    canvas.addEventListener("pointermove", (event) => handleEditorPointerMove(kind, event));
+    canvas.addEventListener("pointerup", (event) => handleEditorPointerUp(kind, event));
+    canvas.addEventListener("pointercancel", (event) => handleEditorPointerUp(kind, event));
+    syncEditorControls(kind);
+  }
+
+  function notesOutsideRange(notes, start, end) {
+    const outside = [];
+    notes.forEach((note) => {
+      if (note.end <= start || note.start >= end) {
+        outside.push({ ...note });
+        return;
+      }
+      if (note.start < start && start - note.start >= 0.03) outside.push({ ...note, end: start });
+      if (note.end > end && note.end - end >= 0.03) outside.push(noteWithId({ ...note, _id: null, start: end }));
+    });
+    return outside;
+  }
+
+  async function regenerateSelectedRange() {
+    const editor = editors.result;
+    if (!editor.range || state.regeneratingSelection || state.generating) return;
+    const selectionStart = Math.max(state.resultMotifEnd, Math.min(editor.range.start, editor.range.end));
+    const selectionEnd = Math.max(editor.range.start, editor.range.end);
+    const selectionDuration = selectionEnd - selectionStart;
+    if (selectionDuration < 0.25) return showNotice("Select at least 0.25 seconds of the generated continuation.");
+    if (selectionDuration > 20) return showNotice("Select at most 20 seconds to regenerate at once.");
+
+    const eligibleContext = state.resultNotes
+      .filter((note) => note.start < selectionStart && note.end > Math.max(0, selectionStart - 25))
+      .sort((left, right) => left.start - right.start || left.pitch - right.pitch);
+    const contextSource = eligibleContext.slice(-64).map((note) => ({ ...note, end: Math.min(note.end, selectionStart) })).filter((note) => note.end - note.start >= 0.03);
+    if (contextSource.length < 2) return showNotice("This range needs at least two earlier notes as musical context.");
+    const contextStart = Math.min(...contextSource.map((note) => note.start));
+    const contextNotes = contextSource.map((note) => ({
+      ...note, start: note.start - contextStart, end: note.end - contextStart,
+    }));
+    const requestedDuration = selectionDuration <= 5 ? 5 : selectionDuration <= 10 ? 10 : 20;
+    const form = new FormData();
+    form.append("motif_json", JSON.stringify(contextNotes));
+    form.append("duration_seconds", String(requestedDuration));
+    form.append("temperature", String(state.temperature));
+    form.append("category", state.category);
+
+    state.regeneratingSelection = true;
+    syncGenerateAvailability();
+    syncEditorControls("result");
+    const button = $("#regenerate-selection-button");
+    button.textContent = "Regenerating…";
+    $("#result-editor-status").textContent = `Recomposing ${selectionStart.toFixed(2)}–${selectionEnd.toFixed(2)}s from the preceding phrase…`;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 90000);
+    let completionMessage = "";
+    try {
+      const response = await fetch("/api/generate", { method: "POST", body: form, signal: controller.signal });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "The selected range could not be regenerated.");
+      const generated = notesWithIds(payload.notes)
+        .filter((note) => note.start >= Number(payload.motif_end_seconds) - 0.001)
+        .map((note) => ({
+          ...note,
+          start: selectionStart + note.start - Number(payload.motif_end_seconds),
+          end: selectionStart + note.end - Number(payload.motif_end_seconds),
+        }))
+        .filter((note) => note.start < selectionEnd && note.end > selectionStart)
+        .map((note) => ({ ...note, start: Math.max(selectionStart, note.start), end: Math.min(selectionEnd, note.end) }))
+        .filter((note) => note.end - note.start >= 0.03);
+      if (!generated.length) throw new Error("The model did not produce playable notes inside that range. Try a wider selection.");
+      pushEditorHistory("result");
+      setEditorNotes("result", [...notesOutsideRange(state.resultNotes, selectionStart, selectionEnd), ...generated]);
+      editor.selected = new Set(generated.map((note) => note._id));
+      editor.range = null;
+      completionMessage = `Replaced ${selectionDuration.toFixed(2)} seconds with ${generated.length} newly generated notes.`;
+      finishEditorChange("result", completionMessage);
+    } catch (error) {
+      showNotice(error.name === "AbortError" ? "Section regeneration took longer than 90 seconds. Try a shorter range." : error.message);
+    } finally {
+      window.clearTimeout(timeout);
+      state.regeneratingSelection = false;
+      button.textContent = "Regenerate selected range";
+      syncGenerateAvailability();
+      syncEditorControls("result");
+      if (completionMessage) $("#result-editor-status").textContent = completionMessage;
+    }
   }
 
   function seekResult(event) {
@@ -983,6 +1501,8 @@
   }
 
   initializeHero();
+  initializeEditor("motif");
+  initializeEditor("result");
   buildPiano();
   $("#record-button").addEventListener("click", () => {
     if (state.countingIn) cancelCountIn(); else if (state.recording) stopRecording(); else prepareRecording();
@@ -1009,7 +1529,7 @@
   $("#generate-button").addEventListener("click", generate);
   $("#play-result-button").addEventListener("click", toggleResultPlayback);
   $("#restart-result-button").addEventListener("click", restartResultPlayback);
-  $("#piano-roll").addEventListener("click", seekResult);
+  $("#regenerate-selection-button").addEventListener("click", regenerateSelectedRange);
   $("#zoom-button").addEventListener("click", toggleZoom);
   $("#fullscreen-button").addEventListener("click", toggleFullscreen);
   $("#download-image-button").addEventListener("click", exportResultImage);
@@ -1041,7 +1561,11 @@
   function handleMidiFile(file) {
     $("#file-name").textContent = file ? file.name : "";
     state.uploadNotes = [];
+    resetEditor("motif");
+    if (state.motifMidiUrl) URL.revokeObjectURL(state.motifMidiUrl);
+    state.motifMidiUrl = null;
     $("#preview-upload-button").disabled = true;
+    updateMotifEditor();
     if (file) analyzeCurrentMotif(); else $("#motif-analysis").classList.add("hidden");
   }
 
@@ -1060,8 +1584,19 @@
   });
 
   window.addEventListener("keydown", (event) => {
-    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     const keyName = event.key.toLowerCase();
+    if (!isTypingTarget(event.target) && (event.ctrlKey || event.metaKey) && (keyName === "z" || keyName === "y")) {
+      event.preventDefault();
+      const redo = keyName === "y" || event.shiftKey;
+      restoreEditorHistory(state.activeEditorKind, redo ? "redo" : "undo");
+      return;
+    }
+    if (!isTypingTarget(event.target) && (event.key === "Delete" || event.key === "Backspace") && editors[state.activeEditorKind].selected.size) {
+      event.preventDefault();
+      deleteEditorSelection(state.activeEditorKind);
+      return;
+    }
+    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     if (!isTypingTarget(event.target) && (keyName === "z" || keyName === "x")) {
       event.preventDefault();
       shiftKeyboardOctave(keyName === "x" ? 1 : -1);
@@ -1086,7 +1621,7 @@
   window.addEventListener("blur", () => { heldKeys.clear(); closeActiveRecordedNotes(); stopAllVoices(); });
   window.addEventListener("resize", () => {
     if (state.resultNotes.length) updatePlaybackVisuals();
-    if (state.notes.length) drawMotifRoll(state.playbackKind === "motif" ? currentPlaybackTime() : null);
+    if (currentMotifNotes().length) drawMotifRoll(state.playbackKind === "motif" ? currentPlaybackTime() : null);
   });
   document.addEventListener("fullscreenchange", () => {
     syncFullscreenButton();

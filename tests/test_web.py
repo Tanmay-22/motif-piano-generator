@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from io import BytesIO
 
@@ -8,7 +9,7 @@ import torch
 from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
-from web.app import app, motif_from_request, parse_recorded_notes
+from web.app import app, motif_from_request, parse_editable_notes, parse_recorded_notes
 from motifgen.v2 import CompleteNoteTokenizer, MotifContinuationTransformer, V2ModelConfig
 
 
@@ -44,6 +45,11 @@ def test_home_page_contains_primary_studio():
         assert 'id="enter-studio-button"' in response.text
         assert 'id="site-shell"' in response.text
         assert 'class="hero-art"' not in response.text
+        assert 'id="motif-editor-title"' in response.text
+        assert 'id="motif-velocity"' in response.text
+        assert 'id="result-velocity"' in response.text
+        assert 'id="regenerate-selection-button"' in response.text
+        assert 'id="download-motif-button"' in response.text
 
 
 def test_analyze_recorded_motif_normalizes_and_reports_texture(monkeypatch, tmp_path):
@@ -87,6 +93,32 @@ def test_recorded_motif_validation():
     assert len(parse_recorded_notes(valid)) == 2
     with pytest.raises(ValueError, match="between 2 and 500"):
         parse_recorded_notes("[]")
+
+
+def test_edited_midi_export_accepts_a_single_note(monkeypatch, tmp_path):
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "missing.pt"))
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    notes = json.dumps([{"pitch": 64, "start": 0.125, "end": 0.875, "velocity": 77}])
+    assert parse_editable_notes(notes)[0].velocity == 77
+
+    with TestClient(app) as client:
+        response = client.post("/api/export-midi", data={"notes_json": notes})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["note_count"] == 1
+    assert payload["duration_seconds"] == pytest.approx(0.875)
+    assert base64.b64decode(payload["midi_base64"]).startswith(b"MThd")
+
+
+def test_edited_midi_export_rejects_invalid_time(monkeypatch, tmp_path):
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "missing.pt"))
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    notes = json.dumps([{"pitch": 64, "start": 0, "end": 61, "velocity": 90}])
+    with TestClient(app) as client:
+        response = client.post("/api/export-midi", data={"notes_json": notes})
+    assert response.status_code == 422
+    assert "between 0 and 60 seconds" in response.json()["detail"]
 
 
 def test_generate_returns_503_without_model(monkeypatch, tmp_path):
