@@ -117,6 +117,15 @@ h2 { margin: 0; font-size: 23px; font-weight: 600; letter-spacing: -.025em; }
 .recording-feedback { min-height: 34px; display: flex; justify-content: space-between; align-items: center; gap: 14px; color: var(--dim); font-family: var(--mono); font-size: 9px; }
 .recording-feedback strong { color: var(--accent); font-weight: 500; }
 .recording-feedback .recording-live { color: #ff9c88; }
+.octave-picker { display: grid; grid-template-columns: auto minmax(112px, auto) auto; align-items: center; gap: 7px; padding: 6px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.02); }
+.octave-picker button { min-width: 44px; height: 38px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 8px; background: #171916; color: var(--muted); cursor: pointer; }
+.octave-picker button:hover:not(:disabled) { border-color: rgba(216,255,98,.4); color: var(--accent); }
+.octave-picker button:disabled { opacity: .3; cursor: not-allowed; }
+.octave-picker button kbd { color: inherit; }
+.octave-readout { display: flex; min-width: 112px; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
+.octave-readout small { color: var(--dim); font-size: 7px; text-transform: uppercase; letter-spacing: .09em; }
+.octave-readout strong { color: var(--ink); font-family: var(--sans); font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
+.octave-readout span { color: var(--accent); font-size: 8px; text-transform: uppercase; letter-spacing: .05em; }
 
 .piano-shell { overflow: hidden; background: #0e0f0e; border: 1px solid var(--line); border-radius: 14px; }
 .piano-caption { display: flex; justify-content: space-between; padding: 11px 15px; color: var(--dim); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
@@ -124,10 +133,14 @@ kbd { border: 1px solid #3e403c; border-bottom-width: 2px; border-radius: 3px; p
 .piano { height: 206px; display: flex; position: relative; padding: 0 12px 12px; user-select: none; touch-action: none; }
 .piano-key { border: 0; padding: 0; cursor: pointer; transition: background .06s ease, transform .06s ease; }
 .piano-key.white { flex: 1; height: 100%; border-radius: 0 0 6px 6px; background: #e8e4da; border-right: 1px solid #aaa79f; position: relative; z-index: 1; }
+.piano-key.white.computer-mapped { box-shadow: inset 0 -5px 0 rgba(157,140,255,.9), inset 0 -18px 28px rgba(157,140,255,.1); }
 .piano-key.white.active { background: var(--accent); transform: translateY(3px); }
 .piano-key.black { position: absolute; top: 0; width: 4.2%; height: 61%; border-radius: 0 0 5px 5px; background: #20221f; border: 1px solid #050505; z-index: 2; transform: translateX(-50%); }
+.piano-key.black.computer-mapped { border-color: var(--violet); box-shadow: inset 0 -4px 0 rgba(157,140,255,.85), 0 3px 8px rgba(0,0,0,.35); }
 .piano-key.black.active { background: var(--violet); transform: translateX(-50%) translateY(3px); }
 .key-label { position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%); color: #77746e; font-family: var(--mono); font-size: 9px; }
+.computer-mapped .key-label { color: #574c88; font-weight: 700; }
+.piano-key.black.computer-mapped .key-label { color: #d8d1ff; }
 
 .motif-timeline { margin-top: 12px; border: 1px solid var(--line); border-radius: 11px; background: #11130f; overflow: hidden; }
 .mini-head { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px 0; color: var(--dim); font-family: var(--mono); font-size: 8px; text-transform: uppercase; letter-spacing: .07em; }
@@ -250,7 +263,8 @@ footer { min-height: 76px; border-top: 1px solid var(--line); display: flex; jus
   .recorder-row #undo-button { margin-left: 0; }
   .record-readout { margin-left: auto; }
   .recording-feedback, .mini-head { align-items: flex-start; flex-direction: column; }
-  .piano-caption .key-hint { display: none; }
+  .octave-picker { width: 100%; grid-template-columns: 48px 1fr 48px; }
+  .piano-caption { align-items: flex-start; flex-direction: column; gap: 5px; line-height: 1.45; }
   .piano { height: 140px; padding-inline: 5px; }
   .piano-key.black { width: 6.6%; }
   .generation-grid { grid-template-columns: 1fr; }

@@ -85,13 +85,21 @@
 
           <div class="recording-feedback" id="recording-feedback" aria-live="polite">
             <span id="recording-status">Ready when you are.</span>
-            <span>Keyboard octave <strong id="octave-display">4</strong> · <kbd>Z</kbd>/<kbd>X</kbd> shift</span>
+            <div class="octave-picker" aria-label="Computer keyboard octave controls">
+              <button id="octave-down-button" type="button" aria-label="Shift computer keys down one octave" title="Previous octave (Z)"><kbd>Z</kbd><span aria-hidden="true">←</span></button>
+              <div class="octave-readout">
+                <small>Computer keys</small>
+                <strong id="octave-display">Octave 4</strong>
+                <span id="octave-position">Left 13 keys</span>
+              </div>
+              <button id="octave-up-button" type="button" aria-label="Shift computer keys up one octave" title="Next octave (X)"><span aria-hidden="true">→</span><kbd>X</kbd></button>
+            </div>
           </div>
 
           <div class="piano-shell">
             <div class="piano-caption">
-              <span>Use your mouse, touch, or keyboard</span>
-              <span class="key-hint"><kbd>A</kbd> to <kbd>K</kbd></span>
+              <span>Mouse or touch any key · computer keys follow the highlighted set</span>
+              <span id="piano-range">Page C4–C6 · active C4–C5</span>
             </div>
             <div class="piano" id="piano" aria-label="Two-octave virtual piano"></div>
           </div>

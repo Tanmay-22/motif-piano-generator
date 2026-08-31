@@ -35,6 +35,10 @@ def test_home_page_contains_primary_studio():
         assert 'id="piano-roll-stage"' in response.text
         assert 'id="download-image-button"' in response.text
         assert 'data-sample="two_hands"' in response.text
+        assert 'id="octave-down-button"' in response.text
+        assert 'id="octave-up-button"' in response.text
+        assert 'id="octave-position"' in response.text
+        assert 'id="piano-range"' in response.text
 
 
 def test_analyze_recorded_motif_normalizes_and_reports_texture(monkeypatch, tmp_path):

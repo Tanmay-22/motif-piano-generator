@@ -5,7 +5,7 @@
   const state = {
     source: "record", recording: false, countingIn: false, countInEnabled: false,
     countInToken: 0, metronomeEnabled: false, metronomeTimer: null,
-    recordingStartedAt: 0, octaveShift: 0, notes: [], uploadNotes: [],
+    recordingStartedAt: 0, keyboardOctave: 4, notes: [], uploadNotes: [],
     activeNotes: new Map(), voices: new Map(), duration: 10, temperature: 1,
     category: "auto", modelVersion: null, modelReady: null, generating: false,
     generationTimer: null, audioContext: null, audioInput: null, timer: null,
@@ -16,7 +16,9 @@
   };
 
   const pitchNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
-  const keyboardMap = { a: 60, w: 61, s: 62, e: 63, d: 64, f: 65, t: 66, g: 67, y: 68, h: 69, u: 70, j: 71, k: 72 };
+  const keyboardOffsets = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };
+  const minimumKeyboardOctave = 2;
+  const maximumKeyboardOctave = 7;
   const blackPitchClasses = new Set([1, 3, 6, 8, 10]);
   const heldKeys = new Map();
   const categoryLabels = {
@@ -59,6 +61,19 @@
 
   function noteName(pitch) {
     return `${pitchNames[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+  }
+
+  function octaveStartPitch(octave) {
+    return (octave + 1) * 12;
+  }
+
+  function keyboardPageStartOctave(octave = state.keyboardOctave) {
+    return 4 + 2 * Math.floor((octave - 4) / 2);
+  }
+
+  function keyboardPitch(keyName) {
+    const offset = keyboardOffsets[keyName];
+    return offset === undefined ? undefined : octaveStartPitch(state.keyboardOctave) + offset;
   }
 
   function formatTime(seconds) {
@@ -190,8 +205,10 @@
 
   function buildPiano() {
     const piano = $("#piano");
-    const minPitch = 48;
-    const maxPitch = 72;
+    const pageStartOctave = keyboardPageStartOctave();
+    const minPitch = octaveStartPitch(pageStartOctave);
+    const maxPitch = minPitch + 24;
+    piano.replaceChildren();
     const whitePitches = [];
     for (let pitch = minPitch; pitch <= maxPitch; pitch += 1) {
       if (!blackPitchClasses.has(pitch % 12)) whitePitches.push(pitch);
@@ -202,8 +219,7 @@
       key.className = "piano-key white";
       key.dataset.pitch = pitch;
       key.setAttribute("aria-label", noteName(pitch));
-      const mapped = Object.entries(keyboardMap).find(([, value]) => value === pitch);
-      if (mapped) key.innerHTML = `<span class="key-label">${mapped[0].toUpperCase()}</span>`;
+      markComputerKey(key, pitch);
       wirePointerKey(key, pitch);
       piano.appendChild(key);
       const nextPitch = pitch + 1;
@@ -214,12 +230,54 @@
         black.style.left = `calc(12px + ${(whiteIndex + 1) * (100 / whitePitches.length)}% - ${(whiteIndex + 1) * (24 / whitePitches.length)}px)`;
         black.dataset.pitch = nextPitch;
         black.setAttribute("aria-label", noteName(nextPitch));
-        const blackMapped = Object.entries(keyboardMap).find(([, value]) => value === nextPitch);
-        if (blackMapped) black.innerHTML = `<span class="key-label">${blackMapped[0].toUpperCase()}</span>`;
+        markComputerKey(black, nextPitch);
         wirePointerKey(black, nextPitch);
         piano.appendChild(black);
       }
     });
+    syncOctaveControls();
+    new Set([...state.voices.values()].map((voice) => voice.pitch)).forEach(syncKeyActive);
+  }
+
+  function markComputerKey(key, pitch) {
+    const offset = pitch - octaveStartPitch(state.keyboardOctave);
+    const mapped = Object.entries(keyboardOffsets).find(([, value]) => value === offset);
+    if (!mapped) return;
+    key.classList.add("computer-mapped");
+    key.dataset.computerKey = mapped[0];
+    key.setAttribute("aria-label", `${noteName(pitch)}, computer key ${mapped[0].toUpperCase()}`);
+    key.innerHTML = `<span class="key-label">${mapped[0].toUpperCase()}</span>`;
+  }
+
+  function syncOctaveControls() {
+    const pageStartOctave = keyboardPageStartOctave();
+    const position = state.keyboardOctave === pageStartOctave ? "Left 13 keys" : "Right 13 keys";
+    $("#octave-display").textContent = `Octave ${state.keyboardOctave}`;
+    $("#octave-position").textContent = position;
+    $("#piano-range").textContent = `Page C${pageStartOctave}–C${pageStartOctave + 2} · active C${state.keyboardOctave}–C${state.keyboardOctave + 1}`;
+    $("#octave-down-button").disabled = state.keyboardOctave <= minimumKeyboardOctave;
+    $("#octave-up-button").disabled = state.keyboardOctave >= maximumKeyboardOctave;
+  }
+
+  function releaseManualVoices() {
+    [...state.voices.entries()]
+      .filter(([voiceId]) => voiceId.startsWith("manual:"))
+      .forEach(([voiceId, voice]) => noteOff(voice.pitch, voiceId));
+    heldKeys.clear();
+  }
+
+  function shiftKeyboardOctave(direction) {
+    const nextOctave = Math.max(minimumKeyboardOctave, Math.min(maximumKeyboardOctave, state.keyboardOctave + direction));
+    if (nextOctave === state.keyboardOctave) {
+      updateRecordingStatus(`The computer-key range stops at octave ${state.keyboardOctave}.`);
+      return;
+    }
+    const previousPage = keyboardPageStartOctave();
+    releaseManualVoices();
+    state.keyboardOctave = nextOctave;
+    buildPiano();
+    const pageChanged = previousPage !== keyboardPageStartOctave();
+    updateRecordingStatus(`Computer keys now play C${nextOctave}–C${nextOctave + 1}${pageChanged ? ` on the C${keyboardPageStartOctave()}–C${keyboardPageStartOctave() + 2} page` : ""}.`);
   }
 
   function wirePointerKey(key, pitch) {
@@ -859,6 +917,8 @@
     event.currentTarget.textContent = `Metronome ${state.metronomeEnabled ? "on" : "off"}`;
     if (state.recording) startMetronome();
   });
+  $("#octave-down-button").addEventListener("click", () => shiftKeyboardOctave(-1));
+  $("#octave-up-button").addEventListener("click", () => shiftKeyboardOctave(1));
   $("#undo-button").addEventListener("click", undoLastOnset);
   $("#clear-button").addEventListener("click", clearRecording);
   $("#preview-motif-button").addEventListener("click", () => startPlayback(state.notes, 0, "motif"));
@@ -923,9 +983,7 @@
     const keyName = event.key.toLowerCase();
     if (!isTypingTarget(event.target) && (keyName === "z" || keyName === "x")) {
       event.preventDefault();
-      state.octaveShift = Math.max(-2, Math.min(2, state.octaveShift + (keyName === "x" ? 1 : -1)));
-      $("#octave-display").textContent = String(4 + state.octaveShift);
-      updateRecordingStatus(`Keyboard shifted to octave ${4 + state.octaveShift}.`);
+      shiftKeyboardOctave(keyName === "x" ? 1 : -1);
       return;
     }
     if (!isTypingTarget(event.target) && event.code === "Space" && !$("#result-card").classList.contains("hidden")) {
@@ -933,17 +991,15 @@
     }
     if (event.key === "Escape") { stopPlayback(true); return; }
     if (isTypingTarget(event.target)) return;
-    const basePitch = keyboardMap[keyName];
-    if (basePitch === undefined || heldKeys.has(keyName)) return;
-    const pitch = basePitch + state.octaveShift * 12;
+    const pitch = keyboardPitch(keyName);
+    if (pitch === undefined || heldKeys.has(keyName)) return;
     if (pitch < 21 || pitch > 108) return;
     event.preventDefault(); heldKeys.set(keyName, pitch); noteOn(pitch);
   });
   window.addEventListener("keyup", (event) => {
     const keyName = event.key.toLowerCase();
-    const basePitch = keyboardMap[keyName];
-    if (basePitch === undefined) return;
-    const pitch = heldKeys.get(keyName) ?? (basePitch + state.octaveShift * 12);
+    if (keyboardOffsets[keyName] === undefined) return;
+    const pitch = heldKeys.get(keyName) ?? keyboardPitch(keyName);
     heldKeys.delete(keyName); noteOff(pitch);
   });
   window.addEventListener("blur", () => { heldKeys.clear(); closeActiveRecordedNotes(); stopAllVoices(); });

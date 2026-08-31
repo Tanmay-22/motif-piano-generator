@@ -21,7 +21,9 @@ responsive browser instrument.
 
 - Records a motif with mouse, touch, or computer keyboard input and immediate
   piano-like Web Audio feedback, optional count-in/metronome, octave shifting,
-  undo, automatic leading-silence trimming, and a live motif roll.
+  undo, automatic leading-silence trimming, and a live motif roll. The visible
+  piano pages through two octaves at a time while the highlighted 13-key
+  computer range moves left-to-right with `Z`/`X`.
 - Accepts `.mid` and `.midi` motifs up to 1 MB.
 - Includes melody, two-hand, and chord examples plus a motif profile that
   explains texture, register, rhythm, density, and dynamics before generation.
