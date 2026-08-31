@@ -62,6 +62,12 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def release_archive_path(output_dir: Path) -> Path:
+    """Append .zip without treating version dots in the directory as a suffix."""
+
+    return Path(f"{output_dir}.zip")
+
+
 def release_quality_failures(report: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     if report.get("evaluation_scope") != "full_split":
@@ -274,7 +280,14 @@ def main() -> None:
     (args.output_dir / "SHA256SUMS.txt").write_text(
         "\n".join(checksum_lines) + "\n", encoding="utf-8"
     )
-    archive_path = shutil.make_archive(str(args.output_dir), "zip", root_dir=args.output_dir)
+    archive_path = Path(
+        shutil.make_archive(str(args.output_dir), "zip", root_dir=args.output_dir)
+    )
+    expected_archive_path = release_archive_path(args.output_dir)
+    if archive_path.resolve() != expected_archive_path.resolve():
+        raise RuntimeError(
+            f"Release archive was created at {archive_path}, expected {expected_archive_path}."
+        )
     print(f"Release directory: {args.output_dir}")
     print(f"Release archive: {archive_path}")
     print(f"MODEL_SHA256={checkpoint_sha}")

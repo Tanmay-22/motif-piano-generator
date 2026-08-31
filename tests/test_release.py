@@ -9,6 +9,7 @@ from motifgen.tokenizer import RecordedNote
 from motifgen.v2 import CompleteNoteTokenizer, MotifContinuationTransformer, V2ModelConfig
 from scripts.prepare_v2_release import (
     main as prepare_release,
+    release_archive_path,
     release_asset_url,
     release_notes_markdown,
     release_quality_failures,
@@ -127,7 +128,7 @@ def test_release_packager_builds_verified_bundle(monkeypatch, tmp_path):
     (examples / "example-1-generated.mid").write_bytes(
         tokenizer.notes_to_midi_bytes([RecordedNote(60, 0, 0.5, 90)])
     )
-    destination = tmp_path / "release"
+    destination = tmp_path / "model-v2.0.0-release"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -153,4 +154,5 @@ def test_release_packager_builds_verified_bundle(monkeypatch, tmp_path):
         "/model-v2.0.0/conditioned-v2-best.pt"
     )
     assert (destination / "SHA256SUMS.txt").exists()
-    assert destination.with_suffix(".zip").exists()
+    assert release_archive_path(destination).exists()
+    assert release_archive_path(destination).name == "model-v2.0.0-release.zip"
