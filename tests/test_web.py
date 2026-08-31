@@ -31,6 +31,43 @@ def test_home_page_contains_primary_studio():
         assert "Baroque / Classical" in response.text
         assert 'id="generation-progress"' in response.text
         assert 'id="result-texture"' in response.text
+        assert 'id="motif-analysis"' in response.text
+        assert 'id="piano-roll-stage"' in response.text
+        assert 'id="download-image-button"' in response.text
+        assert 'data-sample="two_hands"' in response.text
+
+
+def test_analyze_recorded_motif_normalizes_and_reports_texture(monkeypatch, tmp_path):
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "missing.pt"))
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    motif = json.dumps(
+        [
+            {"pitch": 45, "start": 1.25, "end": 2.05, "velocity": 72},
+            {"pitch": 52, "start": 1.25, "end": 2.05, "velocity": 75},
+            {"pitch": 67, "start": 1.25, "end": 1.70, "velocity": 96},
+            {"pitch": 72, "start": 1.70, "end": 2.10, "velocity": 101},
+        ]
+    )
+    with TestClient(app) as client:
+        response = client.post("/api/analyze", data={"motif_json": motif})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert min(note["start"] for note in payload["notes"]) == 0
+    assert payload["features"]["note_count"] == 4
+    assert payload["features"]["pitch_min"] == 45
+    assert payload["features"]["pitch_max"] == 72
+    assert payload["features"]["bass_and_treble"] is True
+    assert payload["features"]["texture"] == "full_polyphonic"
+
+
+def test_analyze_rejects_missing_motif(monkeypatch, tmp_path):
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "missing.pt"))
+    monkeypatch.delenv("MODEL_URL", raising=False)
+    with TestClient(app) as client:
+        response = client.post("/api/analyze")
+    assert response.status_code == 422
+    assert "exactly one motif source" in response.json()["detail"]
 
 
 def test_recorded_motif_validation():

@@ -20,8 +20,11 @@ responsive browser instrument.
 ## What it does
 
 - Records a motif with mouse, touch, or computer keyboard input and immediate
-  Web Audio feedback.
+  piano-like Web Audio feedback, optional count-in/metronome, octave shifting,
+  undo, automatic leading-silence trimming, and a live motif roll.
 - Accepts `.mid` and `.midi` motifs up to 1 MB.
+- Includes melody, two-hand, and chord examples plus a motif profile that
+  explains texture, register, rhythm, density, and dynamics before generation.
 - Generates 5, 10, or 20 seconds with an adjustable temperature from 0.6 to
   1.4.
 - With a v2 checkpoint, offers motif-led, Baroque/Classical, Romantic, and
@@ -29,7 +32,9 @@ responsive browser instrument.
   texture.
 - Shows the active model version and elapsed generation phases instead of an
   indefinite loading state; CPU-limited partial results are labeled clearly.
-- Plays the result in the browser, draws a piano roll, and downloads MIDI.
+- Plays the result in a seekable piano roll with an animated playhead and live
+  key highlighting; supports pause/resume, restart, speed, zoom, fullscreen,
+  MIDI download, and a shareable PNG piano-roll export.
 - Keeps user inputs temporary; there are no accounts, database, analytics, or
   persistent uploads.
 - Serializes inference with a short queue so a free CPU instance is not

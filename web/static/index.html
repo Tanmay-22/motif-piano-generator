@@ -36,9 +36,15 @@
 
     <main>
       <section class="intro" aria-labelledby="page-title">
-        <p class="eyebrow">A motif-conditioned music experiment</p>
-        <h1 id="page-title">Play an idea.<br /><em>Hear where it goes.</em></h1>
-        <p class="lede">Record a small phrase or bring a MIDI file. A piano Transformer will listen, then compose a new continuation in its wake.</p>
+        <div class="intro-copy">
+          <p class="eyebrow">A motif-conditioned music experiment</p>
+          <h1 id="page-title">Play an idea.<br /><em>Hear where it goes.</em></h1>
+          <p class="lede">Record a small phrase or bring a MIDI file. A piano Transformer will listen, then compose a new continuation in its wake.</p>
+        </div>
+        <figure class="hero-art" aria-label="Motif notes flowing into a generated piano continuation">
+          <img src="/static/og.png" alt="Purple motif notes transforming into a flowing lime piano phrase" />
+          <figcaption>Motif in violet · continuation in lime</figcaption>
+        </figure>
       </section>
 
       <section class="studio" aria-label="Music generation studio">
@@ -53,6 +59,13 @@
           </div>
         </div>
 
+        <div class="sample-strip" aria-label="Example motifs">
+          <span>Need an idea?</span>
+          <button type="button" data-sample="melody">Simple melody</button>
+          <button type="button" data-sample="two_hands">Two-hand phrase</button>
+          <button type="button" data-sample="chords">Chord progression</button>
+        </div>
+
         <div id="record-panel" role="tabpanel" aria-labelledby="record-tab">
           <div class="recorder-row">
             <button class="record-button" id="record-button" type="button">
@@ -63,8 +76,16 @@
               <span id="record-time">00:00.0</span>
               <span id="note-count">0 notes</span>
             </div>
+            <button class="mode-button" id="count-in-toggle" type="button" aria-pressed="false" title="Count in for four beats before recording">Count-in off</button>
+            <button class="mode-button" id="metronome-toggle" type="button" aria-pressed="false" title="Play a 120 BPM click while recording">Metronome off</button>
+            <button class="text-button" id="undo-button" type="button" disabled>Undo last</button>
             <button class="text-button" id="clear-button" type="button">Clear</button>
             <button class="text-button" id="preview-motif-button" type="button" disabled>Preview motif</button>
+          </div>
+
+          <div class="recording-feedback" id="recording-feedback" aria-live="polite">
+            <span id="recording-status">Ready when you are.</span>
+            <span>Keyboard octave <strong id="octave-display">4</strong> · <kbd>Z</kbd>/<kbd>X</kbd> shift</span>
           </div>
 
           <div class="piano-shell">
@@ -73,6 +94,11 @@
               <span class="key-hint"><kbd>A</kbd> to <kbd>K</kbd></span>
             </div>
             <div class="piano" id="piano" aria-label="Two-octave virtual piano"></div>
+          </div>
+
+          <div class="motif-timeline hidden" id="motif-timeline">
+            <div class="mini-head"><span>Recorded motif</span><span>Leading silence is trimmed automatically</span></div>
+            <canvas id="motif-roll" width="1120" height="100" aria-label="Recorded motif piano roll"></canvas>
           </div>
         </div>
 
@@ -84,7 +110,24 @@
             <span>or choose a file · max 1 MB</span>
             <span class="file-name" id="file-name"></span>
           </label>
+          <button class="upload-preview text-button" id="preview-upload-button" type="button" disabled>Preview uploaded motif</button>
         </div>
+
+        <section class="motif-analysis hidden" id="motif-analysis" aria-labelledby="analysis-title">
+          <div class="analysis-copy">
+            <span class="micro-label">What the model hears</span>
+            <h3 id="analysis-title">Your motif profile</h3>
+            <p id="analysis-summary">Timing, texture and dynamics from your phrase.</p>
+          </div>
+          <dl class="analysis-stats">
+            <div><dt>Texture</dt><dd id="analysis-texture">—</dd></div>
+            <div><dt>Range</dt><dd id="analysis-range">—</dd></div>
+            <div><dt>Rhythm</dt><dd id="analysis-rhythm">—</dd></div>
+            <div><dt>Dynamics</dt><dd id="analysis-dynamics">—</dd></div>
+            <div><dt>Phrase</dt><dd id="analysis-duration">—</dd></div>
+            <div><dt>Density</dt><dd id="analysis-density">—</dd></div>
+          </dl>
+        </section>
 
         <div class="rule"></div>
 
@@ -156,12 +199,50 @@
           </div>
         </div>
         <p class="result-message hidden" id="result-message" role="status"></p>
-        <canvas id="piano-roll" width="1120" height="260" aria-label="Generated music piano roll"></canvas>
-        <div class="transport">
-          <button class="play-button" id="play-result-button" type="button"><span aria-hidden="true">▶</span> Play result</button>
-          <div class="transport-line"><span id="play-progress"></span></div>
-          <a class="download-button" id="download-button" download="motif-continuation.mid">Download MIDI <span aria-hidden="true">↓</span></a>
+        <div class="roll-toolbar">
+          <div class="roll-legend" aria-label="Piano roll legend"><span class="legend-motif">Your motif</span><span class="legend-continuation">Generated continuation</span></div>
+          <div class="roll-actions">
+            <button class="icon-button" id="zoom-button" type="button" aria-label="Toggle piano roll zoom">Zoom 1×</button>
+            <button class="icon-button" id="fullscreen-button" type="button">Fullscreen</button>
+          </div>
         </div>
+        <div class="piano-roll-stage" id="piano-roll-stage">
+          <div class="piano-roll-scroll" id="piano-roll-scroll">
+            <canvas id="piano-roll" width="1120" height="260" aria-label="Generated music piano roll. Click to seek."></canvas>
+          </div>
+          <span class="seek-hint">Click the piano roll to seek</span>
+        </div>
+        <div class="transport">
+          <div class="transport-primary">
+            <button class="play-button" id="play-result-button" type="button"><span aria-hidden="true">▶</span> <span>Play result</span></button>
+            <button class="icon-button" id="restart-result-button" type="button" aria-label="Restart playback">↺</button>
+            <output class="play-time" id="play-time">0:00 / 0:00</output>
+          </div>
+          <div class="speed-control" aria-label="Playback speed">
+            <span>Speed</span>
+            <button type="button" data-speed="0.75">0.75×</button>
+            <button type="button" data-speed="1" class="active">1×</button>
+            <button type="button" data-speed="1.25">1.25×</button>
+          </div>
+          <div class="download-group">
+            <button class="download-button" id="download-image-button" type="button">Save image <span aria-hidden="true">↓</span></button>
+            <a class="download-button" id="download-button" download="motif-continuation.mid">Download MIDI <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+
+        <section class="generation-insight" id="generation-insight" aria-labelledby="insight-title">
+          <div>
+            <span class="micro-label">How this continuation was shaped</span>
+            <h3 id="insight-title">Following your musical fingerprint</h3>
+            <p id="insight-summary">The model continued the phrase from its timing, range and texture.</p>
+          </div>
+          <dl class="insight-stats">
+            <div><dt>Input</dt><dd id="insight-input">—</dd></div>
+            <div><dt>New notes</dt><dd id="insight-output">—</dd></div>
+            <div><dt>Direction</dt><dd id="insight-direction">—</dd></div>
+            <div><dt>Creativity</dt><dd id="insight-creativity">—</dd></div>
+          </dl>
+        </section>
       </section>
 
       <div class="notice hidden" id="notice" role="status"></div>

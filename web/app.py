@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from motifgen.generation import MotifGenerator
 from motifgen.tokenizer import MidiTokenizer, RecordedNote
 from motifgen.v2 import CompleteNoteTokenizer, MusicCategory, V2MotifGenerator
+from motifgen.v2.features import extract_motif_features
 from scripts.download_model import download_checkpoint
 
 
@@ -60,6 +61,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+analysis_tokenizer = CompleteNoteTokenizer()
 
 
 @app.get("/", include_in_schema=False, response_class=HTMLResponse)
@@ -133,6 +135,55 @@ async def motif_notes_from_request(
     if motif_json:
         return parse_recorded_notes(motif_json)
     return tokenizer.midi_bytes_to_notes(await read_midi_upload(midi_file))
+
+
+@app.post("/api/analyze")
+async def analyze_motif(
+    motif_json: str | None = Form(default=None),
+    midi_file: UploadFile | None = File(default=None),
+) -> dict[str, object]:
+    """Normalize and describe a motif without requiring a model checkpoint."""
+
+    try:
+        notes = await motif_notes_from_request(analysis_tokenizer, motif_json, midi_file)
+        if len(notes) > 500:
+            raise ValueError("Motifs may contain at most 500 notes.")
+        features = extract_motif_features(notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    first_onset = min(note.start for note in notes)
+    normalized = [
+        RecordedNote(
+            pitch=note.pitch,
+            start=max(0.0, note.start - first_onset),
+            end=note.end - first_onset,
+            velocity=note.velocity,
+        )
+        for note in notes
+    ]
+    return {
+        "notes": [note.to_dict() for note in normalized],
+        "features": {
+            "texture": features.texture.value,
+            "duration_seconds": features.duration_seconds,
+            "note_count": features.note_count,
+            "onset_count": features.onset_count,
+            "note_density": features.note_density,
+            "onset_density": features.onset_density,
+            "average_polyphony": features.average_polyphony,
+            "peak_polyphony": features.peak_polyphony,
+            "average_chord_size": features.average_chord_size,
+            "pitch_min": features.pitch_min,
+            "pitch_max": features.pitch_max,
+            "pitch_span": features.pitch_span,
+            "velocity_mean": features.velocity_mean,
+            "velocity_range": features.velocity_range,
+            "median_onset_gap": features.median_onset_gap,
+            "median_note_duration": features.median_note_duration,
+            "bass_and_treble": features.bass_and_treble,
+        },
+    }
 
 
 @app.post("/api/generate")
