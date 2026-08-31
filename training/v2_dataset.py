@@ -296,11 +296,31 @@ def build_phrase_index(
     )
 
 
-def _normalized_note(note: RecordedNote, origin: float) -> RecordedNote:
+def _normalized_window_note(
+    note: RecordedNote,
+    origin: float,
+    window_end: float,
+    tokenizer: CompleteNoteTokenizer,
+) -> RecordedNote:
+    """Normalize a note and close pedal-length sustains at the phrase boundary.
+
+    MAESTRO note ends include sustain-pedal extension, so a small number of
+    notes last longer than the tokenizer's maximum duration. A training phrase
+    cannot represent sound beyond its own window anyway. Clipping to both the
+    phrase boundary and the tokenizer limit preserves the onset and expression
+    without discarding the entire performance.
+    """
+
+    start = max(0.0, note.start - origin)
+    absolute_end = min(
+        note.end,
+        window_end,
+        note.start + tokenizer.max_time_seconds,
+    )
     return RecordedNote(
         pitch=note.pitch,
-        start=max(0.0, note.start - origin),
-        end=max(0.01, note.end - origin),
+        start=start,
+        end=max(start + (1 / tokenizer.sample_rate), absolute_end - origin),
         velocity=note.velocity,
     )
 
@@ -326,9 +346,20 @@ def _window_to_pair(
     if not config.min_continuation_notes <= len(continuation_source) <= config.max_continuation_events:
         return None
 
-    motif_notes = [_normalized_note(note, start) for note in motif_source]
+    motif_notes = [
+        _normalized_window_note(note, start, split, tokenizer)
+        for note in motif_source
+    ]
     last_motif_onset = max(note.start for note in motif_source)
-    continuation_notes = [_normalized_note(note, last_motif_onset) for note in continuation_source]
+    continuation_notes = [
+        _normalized_window_note(
+            note,
+            last_motif_onset,
+            continuation_end,
+            tokenizer,
+        )
+        for note in continuation_source
+    ]
     motif_events = tokenizer.notes_to_events(motif_notes, add_bos=True)
     motif_events.append(CompleteNoteEvent.special(EventType.SEP))
     continuation_events = tokenizer.notes_to_events(continuation_notes, add_bos=True, add_eos=True)

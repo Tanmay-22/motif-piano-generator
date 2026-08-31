@@ -12,6 +12,8 @@ from training.v2_dataset import (
     COMPOSER_CATEGORIES,
     MaestroV2PhraseDataset,
     PhraseExtractionConfig,
+    _window_to_pair,
+    build_phrase_index,
     category_for_composer,
     extract_phrase_pair,
     load_v2_split_records,
@@ -92,6 +94,47 @@ def test_phrase_pair_is_onset_aligned_and_preserves_transition_delay():
         note.start for note in _phrase_notes() if pair.source_start_seconds <= note.start < pair.split_seconds
     )
     assert continuation[0].start == pytest.approx(pair.split_seconds - source_last_motif_onset, abs=0.011)
+
+
+def test_phrase_pair_clips_pedal_sustains_to_phrase_windows():
+    notes = _phrase_notes()
+    notes[0] = RecordedNote(
+        notes[0].pitch,
+        notes[0].start,
+        45.0,
+        notes[0].velocity,
+    )
+    continuation_index = next(
+        index for index, note in enumerate(notes) if note.start == 2.4
+    )
+    continuation_note = notes[continuation_index]
+    notes[continuation_index] = RecordedNote(
+        continuation_note.pitch,
+        continuation_note.start,
+        50.0,
+        continuation_note.velocity,
+    )
+    tokenizer = CompleteNoteTokenizer()
+    config = _small_config()
+    pair = _window_to_pair(
+        build_phrase_index(notes),
+        start=0.0,
+        split=2.4,
+        category=MusicCategory.ROMANTIC,
+        tokenizer=tokenizer,
+        config=config,
+    )
+    assert pair is not None
+
+    motif = tokenizer.events_to_notes(pair.motif_events)
+    continuation = tokenizer.events_to_notes(pair.continuation_events)
+    assert max(note.end for note in motif) == pytest.approx(2.4, abs=0.011)
+    # Continuation timing is relative to the final motif onset (1.8 seconds).
+    assert max(note.end for note in continuation) == pytest.approx(3.6, abs=0.011)
+    assert all(
+        note.end - note.start <= tokenizer.max_time_seconds
+        for note in [*motif, *continuation]
+    )
 
 
 def test_metadata_loader_preserves_official_split_and_category(tmp_path):
