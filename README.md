@@ -159,6 +159,33 @@ compare against freshly initialized weights, export deterministic held-out
 listening examples, validate the release quality gates, and assemble the
 checkpoint, report, license, examples, manifest, and SHA-256 checksums.
 
+## v2 evaluation
+
+The deployed `conditioned-v2-best.pt` checkpoint was selected at optimizer step
+5,000. Lower loss is better. These measurements use every example in the
+official MAESTRO v3 validation and held-out test splits:
+
+| Measurement | Result |
+| --- | ---: |
+| Validation loss | `1.816188` |
+| Held-out test loss | `1.763603` |
+| Untrained validation loss | `5.912978` |
+| Validation improvement over untrained | `4.096790` |
+| Validation shuffled-motif loss | `1.840028` |
+| Validation motif-dependency gap | `+0.023840` |
+| Test shuffled-motif loss | `1.787386` |
+| Test motif-dependency gap | `+0.023783` |
+| Validation note events | `15,973` |
+| Test note events | `20,891` |
+
+All release gates passed: the trained model beats freshly initialized weights,
+and replacing each correct motif with another example's motif increases loss
+on both validation and test data. The positive dependency gaps provide an
+objective check that the decoder uses motif context instead of behaving as an
+unconditional piano generator. This checkpoint completes one 5,000-step Colab
+session; the training state remains resumable for a later, separately evaluated
+model revision.
+
 ## Fixed held-out examples
 
 After the `model-v2.0.0` release is published, these links provide the fixed
